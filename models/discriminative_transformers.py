@@ -1,20 +1,4 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-""" Finetuning the library models for sequence classification on GLUE (Bert, XLM, XLNet, RoBERTa)."""
-
+""" Finetuning the library models for sequence classification on (Bert, XLM, XLNet, RoBERTa)."""
 from __future__ import absolute_import, division, print_function
 
 import argparse
@@ -46,6 +30,9 @@ from pytorch_transformers import AdamW, WarmupLinearSchedule
 from utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
 
+from utils.helpers import set_seed
+from models.discriminator import Discriminator
+
 logger = logging.getLogger(__name__)
 
 ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, XLNetConfig, XLMConfig, RobertaConfig)), ())
@@ -57,13 +44,7 @@ MODEL_CLASSES = {
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
 }
 
-
-def set_seed(args):
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if args.n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
+class PretrainedDiscriminativeTransformer(Discriminator):
 
 
 def train(args, train_dataset, model, tokenizer):

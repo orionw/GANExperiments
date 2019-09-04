@@ -39,22 +39,6 @@ class Discriminator(nn.Module):
         out = torch.sigmoid(out)
         return out
 
-    def batchClassify(self, input_dataloader):
-        """
-        Classifies a batch of sequences.
-
-        Inputs: inp
-            - inp: batch_size x seq_len
-
-        Returns: out
-            - out: batch_size ([0,1] score)
-        """
-
-        h = self.init_hidden(len(input_dataloader))
-        for index, text in enumerate(input_dataloader):
-            out, h = self.forward(text, h)
-        return out.view(-1)
-
     def batchBCELoss(self, inp, target):
         """
         Returns Binary Cross Entropy Loss for discriminator.

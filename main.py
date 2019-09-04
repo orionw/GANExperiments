@@ -15,7 +15,7 @@ import models.generator as generator
 import models.discriminator as discriminator
 import utils.helpers as helpers
 from utils.load_data import get_dataloaders, GenerationDatasetList, DiscriminatorDatasetFromList
-
+import utils.argparser
 
 
 CUDA = False
@@ -111,7 +111,6 @@ def train_discriminator(discriminator, dis_opt, true_samples_trainloader, true_s
     neg_val_train = generator.sample_text(5)
     pos_val_train = true_samples_trainloader.dataset.data[0].tolist()[:5]
     train_dataloader = DataLoader(DiscriminatorDatasetFromList(neg_val_train, pos_val_train), batch_size=BATCH_SIZE)
-    import pdb; pdb.set_trace()
 
     for epoch in range(epochs):
         loop = tqdm(total=len(train_dataloader), position=0, leave=False)
@@ -120,10 +119,9 @@ def train_discriminator(discriminator, dis_opt, true_samples_trainloader, true_s
         total_loss = 0
         total_acc = 0
 
-        for index, text in enumerate(train_dataloader):
-            inp, target = dis_inp[i:i + BATCH_SIZE], dis_target[i:i + BATCH_SIZE]
+        for index, (text, label) in enumerate(train_dataloader):
             dis_opt.zero_grad()
-            out = discriminator.forward(inp)
+            out = discriminator.forward(text)
             loss_fn = nn.BCELoss()
             loss = loss_fn(out, target)
             loss.backward()
@@ -153,6 +151,9 @@ def train_discriminator(discriminator, dis_opt, true_samples_trainloader, true_s
 
 
 if __name__ == '__main__':
+    import pdb; pdb.set_trace()
+    utils.argparser.parse_all_args(sys.argv)
+
     true_samples_train = get_dataloaders(os.path.join("data", "emnlp_news", "train.txt"))
     true_samples_val = get_dataloaders(os.path.join("data", "emnlp_news", "val.txt"))
 
