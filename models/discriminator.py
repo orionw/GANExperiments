@@ -5,11 +5,11 @@ import pdb
 
 class Discriminator(nn.Module):
 
-    def __init__(self, embedding_dim, hidden_dim, vocab_size, max_seq_len, gpu=False, dropout=0.2):
+    def __init__(self, embedding_dim, hidden_dim, vocab_size, max_seq_length, gpu=False, dropout=0.2):
         super(Discriminator, self).__init__()
         self.hidden_dim = hidden_dim
         self.embedding_dim = embedding_dim
-        self.max_seq_len = max_seq_len
+        self.max_seq_length = max_seq_length
         self.gpu = gpu
 
         self.embeddings = nn.Embedding(vocab_size, embedding_dim)

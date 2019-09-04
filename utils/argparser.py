@@ -103,6 +103,9 @@ def parse_all_args(arglist):
                          "See details at https://nvidia.github.io/apex/amp.html")
      parser.add_argument("--local_rank", type=int, default=-1,
                     help="For distributed training: local_rank")
+     parser.add_argument("--max_seq_length", default=128, type=int,
+               help="The maximum total input sequence length after tokenization. Sequences longer "
+                    "than this will be truncated, sequences shorter will be padded.")
      parser.add_argument('--server_ip', type=str, default='', help="For distant debugging.")
      parser.add_argument('--server_port', type=str, default='', help="For distant debugging.")
      parser.add_argument("--prompt", type=str, default="")

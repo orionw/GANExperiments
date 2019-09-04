@@ -12,11 +12,11 @@ from models.generative_transformers import PretrainedTransformerGenerator
 
 class Generator(nn.Module):
 
-    def __init__(self, embedding_dim, hidden_dim, vocab_size, max_seq_len, gpu=False, oracle_init=False):
+    def __init__(self, embedding_dim, hidden_dim, vocab_size, max_seq_length, gpu=False, oracle_init=False):
         super(Generator, self).__init__()
         self.hidden_dim = hidden_dim
         self.embedding_dim = embedding_dim
-        self.max_seq_len = max_seq_len
+        self.max_seq_length = max_seq_length
         self.vocab_size = vocab_size
         self.gpu = gpu
 
@@ -45,7 +45,7 @@ class Generator(nn.Module):
 
     def sample(self, num_samples):
         """
-        Samples the network and returns num_samples samples of length max_seq_len.
+        Samples the network and returns num_samples samples of length args.max_seq_length.
 
         """
         return self.model.sample(num_samples)

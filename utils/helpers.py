@@ -76,12 +76,12 @@ def batchwise_sample(gen, num_samples, batch_size):
     return torch.cat(samples, 0)[:num_samples]
 
 
-def batchwise_oracle_nll(gen, oracle, num_samples, batch_size, max_seq_len, start_letter=0, gpu=False):
+def batchwise_oracle_nll(gen, oracle, num_samples, batch_size, max_seq_length, start_letter=0, gpu=False):
     s = batchwise_sample(gen, num_samples, batch_size)
     oracle_nll = 0
     for i in range(0, num_samples, batch_size):
         inp, target = prepare_generator_batch(s[i:i+batch_size], start_letter, gpu)
-        oracle_loss = oracle.batchNLLLoss(inp, target) / max_seq_len
+        oracle_loss = oracle.batchNLLLoss(inp, target) / max_seq_length
         oracle_nll += oracle_loss.data.item()
 
     return oracle_nll/(num_samples/batch_size)
