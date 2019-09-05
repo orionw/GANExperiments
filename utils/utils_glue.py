@@ -312,7 +312,7 @@ def pearson_and_spearman(preds, labels):
 def compute_metrics(task_name, preds, labels):
     assert len(preds) == len(labels)
     if task_name == "cola":
-        return {"mcc": matthews_corrcoef(labels, preds)}
+        return {"mcc": matthews_corrcoef(labels, preds), "acc/f1": acc_and_f1(preds, labels)} 
     elif task_name == "sst-2":
         return {"acc": simple_accuracy(preds, labels)}
     elif task_name == "mrpc":
