@@ -4,6 +4,8 @@ import numpy as np
 import sys
 import pdb
 import os
+import logging
+import pickle
 
 from tqdm import tqdm
 import torch
@@ -14,184 +16,148 @@ from torch.utils.data import Dataset, DataLoader
 import models.generator as generator
 import models.discriminator as discriminator
 import utils.helpers as helpers
-from utils.load_data import get_dataloaders, GenerationDatasetList, DiscriminatorDatasetFromList
+from utils.load_data import (get_dataloaders, GenerationDatasetList, DiscriminatorDatasetFromList, get_data, get_data_for_generator,
+                                load_and_cache_examples_generator, TextDataset, load_and_cache_examples)
+
 import utils.argparser
 
+from utils.utils_glue import (compute_metrics, convert_examples_to_features,
+                        output_modes, processors)
 
-CUDA = False
-VOCAB_SIZE = 5000
-START_LETTER = 0
-BATCH_SIZE = 32
+from models.training_functions import evaluate_discriminator, train_discriminator, evaluate_generator, train_generator, prepare_opt_and_scheduler
+
+logger = logging.getLogger(__name__)
+
 MLE_TRAIN_EPOCHS = 100
 ADV_TRAIN_EPOCHS = 50
-POS_NEG_SAMPLES = 10000
 
-GEN_EMBEDDING_DIM = 32
-GEN_HIDDEN_DIM = 32
-DIS_EMBEDDING_DIM = 64
-DIS_HIDDEN_DIM = 64
-
-oracle_samples_path = './oracle_samples.trc'
-oracle_state_dict_path = './oracle_EMBDIM32_HIDDENDIM32_VOCAB5000_MAXSEQLEN20.trc'
-pretrained_gen_path = './gen_MLEtrain_EMBDIM32_HIDDENDIM32_VOCAB5000_MAXSEQLEN20.trc'
-pretrained_dis_path = './dis_pretrain_EMBDIM_64_HIDDENDIM64_VOCAB5000_MAXSEQLEN20.trc'
-
-
-def train_generator_MLE(gen, gen_opt, oracle, real_data_samples, epochs):
+def run_epochs(args, model, tokenizer, optimizer, scheduler, is_discriminator: bool = True, given_dataset_train = None, given_dataset_val = None):
     """
-    Max Likelihood Pretraining for the generator
+    The default function to train and evaluate for `n_epochs` and return the results
     """
-    for epoch in range(epochs):
-        print('epoch %d : ' % (epoch + 1), end='')
-        sys.stdout.flush()
-        total_loss = 0
+    train = train_discriminator if is_discriminator else train_generator
+    evaluate = evaluate_discriminator if is_discriminator else evaluate_generator
+    task_type = "cola" if is_discriminator else "gan"
+    print("Evaluating on type: {} for {}".format(task_type, "discriminator" if is_discriminator else "generator"))
 
-        for i in range(0, POS_NEG_SAMPLES, BATCH_SIZE):
-            inp, target = helpers.prepare_generator_batch(real_data_samples[i:i + BATCH_SIZE], start_letter=START_LETTER,
-                                                          gpu=CUDA)
-            gen_opt.zero_grad()
-            loss = gen.batchNLLLoss(inp, target)
-            loss.backward()
-            gen_opt.step()
-
-            total_loss += loss.data.item()
-
-            if (i / BATCH_SIZE) % ceil(
-                            ceil(POS_NEG_SAMPLES / float(BATCH_SIZE)) / 10.) == 0:  # roughly every 10% of an epoch
-                print('.', end='')
-                sys.stdout.flush()
-
-        # each loss in a batch is loss per sample
-        total_loss = total_loss / ceil(POS_NEG_SAMPLES / float(BATCH_SIZE)) / args.max_seq_length
-
-        # sample from generator and compute oracle NLL
-        oracle_loss = helpers.batchwise_oracle_nll(gen, oracle, POS_NEG_SAMPLES, BATCH_SIZE, args.max_seq_length,
-                                                   start_letter=START_LETTER, gpu=CUDA)
-
-        print(' average_train_NLL = %.4f, oracle_sample_NLL = %.4f' % (total_loss, oracle_loss))
+    # Training
+    if args.do_train:
+        if is_discriminator:
+            train_dataset = load_and_cache_examples(args, task_type, tokenizer, given_dataset_train, evaluate=False)
+        else:
+            train_dataset = load_and_cache_examples_generator(args, tokenizer, evaluate=False)
+        global_step, tr_loss = train(args, train_dataset, model, tokenizer, optimizer, scheduler)
+        logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
 
-def train_generator_PG(gen, gen_opt, oracle, dis, num_batches):
-    """
-    The generator is trained using policy gradients, using the reward from the discriminator.
-    Training is done for num_batches batches.
-    """
+    # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
+    if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
+        # Create output directory if needed
+        if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
+            os.makedirs(args.output_dir)
 
-    for batch in range(num_batches):
-        s = gen.sample(BATCH_SIZE*2)        # 64 works best
-        inp, target = helpers.prepare_generator_batch(s, start_letter=START_LETTER, gpu=CUDA)
-        rewards = dis.batchClassify(target)
+        logger.info("Saving model checkpoint to %s", args.output_dir)
+        # Save a trained model, configuration and tokenizer using `save_pretrained()`.
+        # They can then be reloaded using `from_pretrained()`
+        model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
+        model_to_save.model.model.save_pretrained(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
 
-        gen_opt.zero_grad()
-        pg_loss = gen.batchPGLoss(inp, target, rewards)
-        pg_loss.backward()
-        gen_opt.step()
+        # Good practice: save your training arguments together with the trained model
+        torch.save(args, os.path.join(args.output_dir, 'training_args.bin'))
 
-    # sample from generator and compute oracle NLL
-    oracle_loss = helpers.batchwise_oracle_nll(gen, oracle, POS_NEG_SAMPLES, BATCH_SIZE, args.max_seq_length,
-                                                   start_letter=START_LETTER, gpu=CUDA)
+    # Evaluation TODO: add this to the run_gan.sh script
+    results = {}
+    if args.do_eval and args.local_rank in [-1, 0]:
+        checkpoints = [args.output_dir]
+        if args.eval_all_checkpoints:
+            checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
+            logging.getLogger("pytorch_transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
+        logger.info("Evaluate the following checkpoints: %s", checkpoints)
+        if is_discriminator:
+            eval_dataset = load_and_cache_examples(args, task_type, tokenizer, given_dataset_val, evaluate=True)
+        else:
+            eval_dataset = load_and_cache_examples_generator(args, tokenizer, evaluate=True)
+        for checkpoint in checkpoints:
+            global_step = checkpoint.split('-')[-1] if len(checkpoints) > 1 else ""
+            model.model = model.model.model_class.from_pretrained(checkpoint)
+            model.to(args.device)
+            result = evaluate(args, model, tokenizer, eval_dataset, prefix=global_step)
+            result = dict((k + '_{}'.format(global_step), v) for k, v in result.items())
+            results.update(result)
 
-    print(' oracle_sample_NLL = %.4f' % oracle_loss)
-
-
-def train_discriminator(discriminator, dis_opt, true_samples_trainloader, true_samples_val, generator, d_steps, epochs: int):
-    """
-    Training the discriminator on true_samples (positive) and generated samples from generator (negative).
-    Samples are drawn d_steps times, and the discriminator is trained for epochs epochs.
-    :param true_samples_trainloader: a dataloader of the true samples
-    """
-
-    # generating a small validation set before training (using oracle and generator)
-    pos_val = true_samples_val.dataset.data[0].tolist()[:5]
-    print("Creating fake samples for the discriminator...")
-    neg_val = generator.sample_text(5)
-    validation_dataloader = DataLoader(GenerationDatasetList(pos_val + neg_val), batch_size=BATCH_SIZE)
-
-    neg_val_train = generator.sample_text(5)
-    pos_val_train = true_samples_trainloader.dataset.data[0].tolist()[:5]
-    train_dataloader = DataLoader(DiscriminatorDatasetFromList(neg_val_train, pos_val_train), batch_size=BATCH_SIZE)
-
-    for epoch in range(epochs):
-        loop = tqdm(total=len(train_dataloader), position=0, leave=False)
-        print('epoch %d : ' % (epoch + 1), end='')
-        sys.stdout.flush()
-        total_loss = 0
-        total_acc = 0
-
-        for index, (text, label) in enumerate(train_dataloader):
-            dis_opt.zero_grad()
-            out = discriminator.forward(text)
-            loss_fn = nn.BCELoss()
-            loss = loss_fn(out, target)
-            loss.backward()
-            dis_opt.step()
-
-            total_loss += loss.data.item()
-            total_acc += torch.sum((out>0.5)==(target>0.5)).data.item()
-
-            if (i / BATCH_SIZE) % ceil(ceil(2 * POS_NEG_SAMPLES / float(
-                    BATCH_SIZE)) / 10.) == 0:  # roughly every 10% of an epoch
-                print('.', end='')
-                sys.stdout.flush()
-
-        total_loss /= ceil(2 * POS_NEG_SAMPLES / float(BATCH_SIZE))
-        total_acc /= float(2 * POS_NEG_SAMPLES)
-
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for text in tqdm(validation_dataloader):
-                outputs = discriminator.forward(text)
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-        print('Accuracy of the network on the validation set: %d %%' % (
-            100 * correct / total))
+    return results
 
 
 if __name__ == '__main__':
     global args  # for convenience,  I know it's a bad idea
     args = utils.argparser.parse_all_args(sys.argv)
 
-    true_samples_train = get_dataloaders(os.path.join("data", "emnlp_news", "train.txt"))
-    true_samples_val = get_dataloaders(os.path.join("data", "emnlp_news", "val.txt"))
+    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
+        raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
 
-    gen = generator.Generator(GEN_EMBEDDING_DIM, GEN_HIDDEN_DIM, VOCAB_SIZE, args.max_seq_length, gpu=CUDA)
-    dis = discriminator.Discriminator(DIS_EMBEDDING_DIM, DIS_HIDDEN_DIM, VOCAB_SIZE, args.max_seq_length, gpu=CUDA)
+    # Setup CUDA, GPU & distributed training
+    if args.local_rank == -1 or args.no_cuda:
+        device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+        args.n_gpu = torch.cuda.device_count()
+    else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
+        torch.cuda.set_device(args.local_rank)
+        device = torch.device("cuda", args.local_rank)
+        torch.distributed.init_process_group(backend='nccl')
+        args.n_gpu = 1
+    args.device = device
 
-    if torch.cuda.is_available():
-        gen = gen.cuda()
-        dis = dis.cuda()
+     # Setup logging
+    logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                        datefmt = '%m/%d/%Y %H:%M:%S',
+                        level = logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
+    logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
+                    args.local_rank, device, args.n_gpu, bool(args.local_rank != -1), args.fp16)
 
-    # GENERATOR MLE TRAINING
-    print('Starting Generator MLE Training...')
-    gen_optimizer = optim.Adam(gen.parameters(), lr=1e-2)
+    # Set seed
+    helpers.set_seed(args)
+
+    # get data
+    # TODO: these are not used. Remove them?
+    training_set_generator = get_data(os.path.join("data", "emnlp_news", "train.csv"))
+    true_samples_val = get_data(os.path.join("data", "emnlp_news", "val.csv"))
+    train_sample_length = len(true_samples_val)
+
+    logger.info("Training/evaluation parameters %s", args)
+    # get models
+    gen = generator.Generator(args)
+    dis = discriminator.Discriminator(args)
+    gen.to(args.device)
+    dis.to(args.device)
+
+    # assign tokenizers
+    tokenizer_gen = gen.tokenizer
+    tokenizer_dis = dis.tokenizer
+
+    gen, gen_optimizer, gen_scheduler = prepare_opt_and_scheduler(args, gen, train_sample_length)
+    dis, dis_optimizer, dis_scheduler = prepare_opt_and_scheduler(args, dis, train_sample_length)
+
+
+    # # GENERATOR MLE TRAINING # TODO add MLE training first for adaptation?
+    # print('Starting Generator MLE Training...')
+    # gen_optimizer = optim.Adam(gen.parameters(), lr=1e-2)
     # train_generator_MLE(gen, gen_optimizer, oracle, oracle_samples, MLE_TRAIN_EPOCHS)
-
-    # torch.save(gen.state_dict(), pretrained_gen_path)
-    # gen.load_state_dict(torch.load(pretrained_gen_path))
-
-    # PRETRAIN DISCRIMINATOR
-    print('\nStarting Discriminator Training...')
-    dis_optimizer = optim.Adagrad(dis.parameters())
-    train_discriminator(dis, dis_optimizer, true_samples_train, true_samples_val, gen, 50, 3)
-
-    # torch.save(dis.state_dict(), pretrained_dis_path)
-    # dis.load_state_dict(torch.load(pretrained_dis_path))
+    # TODO: add loading model config and test it
 
     # ADVERSARIAL TRAINING
     print('\nStarting Adversarial Training...')
-    oracle_loss = helpers.batchwise_oracle_nll(gen, oracle, POS_NEG_SAMPLES, BATCH_SIZE, args.max_seq_length,
-                                               start_letter=START_LETTER, gpu=CUDA)
-    print('\nInitial Oracle Sample Loss : %.4f' % oracle_loss)
-
     for epoch in range(ADV_TRAIN_EPOCHS):
-        print('\n--------\nEPOCH %d\n--------' % (epoch+1))
+        print('\n--------\nGAN EPOCH %d\n--------' % (epoch+1))
         # TRAIN GENERATOR
         print('\nAdversarial Training Generator : ', end='')
         sys.stdout.flush()
-        train_generator_PG(gen, gen_optimizer, oracle, dis, 1)
+        run_epochs(args, gen, tokenizer_gen, gen_optimizer, gen_scheduler, is_discriminator=False)
 
         # TRAIN DISCRIMINATOR
-        print('\nAdversarial Training Discriminator : ')
-        train_discriminator(dis, dis_optimizer, oracle_samples, gen, oracle, 5, 3)
+        # TODO make dataset with generator
+        print('Generating the negative samples for the discriminator')
+        negative_samples = gen.sample_text(train_sample_length)
+        print("The Generators output is: {}".format(" ".join([sentence for sentence in negative_samples])))
+        training_set_discriminator = get_data_for_generator(os.path.join("data", "emnlp_news", "val.csv"), negative_samples)
+        print('\nAdversarial Training Discriminator : ')    
+        run_epochs(args, dis, tokenizer_dis, dis_optimizer, dis_scheduler, given_dataset_train=training_set_discriminator, given_dataset_val=training_set_discriminator)

@@ -12,22 +12,16 @@ from models.generative_transformers import PretrainedTransformerGenerator
 
 class Generator(nn.Module):
 
-    def __init__(self, embedding_dim, hidden_dim, vocab_size, max_seq_length, gpu=False, oracle_init=False):
+    def __init__(self, args):
         super(Generator, self).__init__()
-        self.hidden_dim = hidden_dim
-        self.embedding_dim = embedding_dim
-        self.max_seq_length = max_seq_length
-        self.vocab_size = vocab_size
-        self.gpu = gpu
+        # self.hidden_dim = hidden_dim
+        # self.embedding_dim = embedding_dim
+        self.max_seq_length = args.max_seq_length
+        self.gpu = args.no_cuda is False
 
-        # self.model = GRUModelGenerator(vocab_size, embedding_dim, hidden_dim)
-        self.model = PretrainedTransformerGenerator("xlnet")
-
-        # initialise oracle network with N(0,1)
-        # otherwise variance of initialisation is very small => high NLL for data sampled from the same model
-        if oracle_init:
-            for p in self.parameters():
-                init.normal(p, 0, 1)
+        # getting a model should also return a tokenizer for that model
+        self.model = PretrainedTransformerGenerator(args)
+        self.tokenizer = self.model.tokenizer
 
     def init_hidden(self, batch_size=1):
         h = autograd.Variable(torch.zeros(1, batch_size, self.hidden_dim))
@@ -37,11 +31,11 @@ class Generator(nn.Module):
         else:
             return h
 
-    def forward(self, inp, hidden):
+    def forward(self, inputs, **kwargs):
         """
         Embeds input and applies GRU one token at a time (seq_len = 1)
         """
-        return self.model.forward(inp, hidden)
+        return self.model.forward(inputs, **kwargs)
 
     def sample(self, num_samples):
         """

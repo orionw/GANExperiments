@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 
 class TestDataLoader(unittest.TestCase):
     def setUp(self):
-        self.root_path = os.path.join("data", "emnlp_news", "train.txt")
+        self.root_path = os.path.join("data", "emnlp_news", "train.csv")
 
     def test_dataloader_creation(self):
         batch_size = 64

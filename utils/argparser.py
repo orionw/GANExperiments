@@ -62,11 +62,11 @@ def parse_all_args(arglist):
                     help="Run evaluation during training at each logging step.")
      parser.add_argument("--do_lower_case", action='store_true',
                     help="Set this flag if you are using an uncased model.")
-     parser.add_argument("--per_gpu_train_batch_size", default=4, type=int,
+     parser.add_argument("--per_gpu_train_batch_size", default=16, type=int,
                     help="Batch size per GPU/CPU for training.")
-     parser.add_argument("--per_gpu_eval_batch_size", default=4, type=int,
+     parser.add_argument("--per_gpu_eval_batch_size", default=16, type=int,
                     help="Batch size per GPU/CPU for evaluation.")
-     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
+     parser.add_argument('--gradient_accumulation_steps', type=int, default=4,
                     help="Number of updates steps to accumulate before performing a backward/update pass.")
      parser.add_argument("--learning_rate", default=5e-5, type=float,
                     help="The initial learning rate for Adam.")

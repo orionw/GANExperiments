@@ -1,6 +1,8 @@
 import torch
 from torch.autograd import Variable
 from math import ceil
+import random
+import numpy as np
 
 def prepare_generator_batch(samples, start_letter=0, gpu=False):
     """
@@ -93,3 +95,4 @@ def set_seed(args):
     torch.manual_seed(args.seed)
     if args.n_gpu > 0:
         torch.cuda.manual_seed_all(args.seed)
+

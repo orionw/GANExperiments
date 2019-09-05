@@ -24,10 +24,10 @@ MAX_LENGTH = int(10000)  # Hardcoded max length to avoid infinite loop
 ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (GPT2Config, OpenAIGPTConfig, XLNetConfig, TransfoXLConfig)), ())
 
 MODEL_CLASSES = {
-    'gpt2': (GPT2LMHeadModel, GPT2Tokenizer),
-    'openai-gpt': (OpenAIGPTLMHeadModel, OpenAIGPTTokenizer),
-    'xlnet': (XLNetLMHeadModel, XLNetTokenizer),
-    'transfo-xl': (TransfoXLLMHeadModel, TransfoXLTokenizer),
+    'gpt2': (GPT2Config, GPT2LMHeadModel, GPT2Tokenizer),
+    'openai-gpt': (OpenAIGPTConfig, OpenAIGPTLMHeadModel, OpenAIGPTTokenizer),
+    'xlnet': (XLNetConfig, XLNetLMHeadModel, XLNetTokenizer),
+    'transfo-xl': (TransfoXLConfig, TransfoXLLMHeadModel, TransfoXLTokenizer),
 }
 
 # Padding text to help Transformer-XL and XLNet with short prompts as proposed by Aman Rusia
@@ -47,34 +47,38 @@ with people, even a bishop, begging for his blessing. <eod> </s> <eos>"""
 
 class PretrainedTransformerGenerator(nn.Module):
 
-    def __init__(self, model_type: str = "xlnet", model_name_or_path: str = "xlnet-base-cased", padding_text: str = "", 
-                 length: int = 20, temperature: float = 1.0, top_k: int = 0, top_p: float = 0.9,
-                 seed: int = 0, device: str = "cuda:0"):
+    def __init__(self, args):
         super().__init__()
-        self.model_type = model_type.lower()
-        model_class, tokenizer_class = MODEL_CLASSES[model_type]
-        self.tokenizer = tokenizer_class.from_pretrained(model_name_or_path)
-        self.model = model_class.from_pretrained(model_name_or_path)
-        self.model.eval()
-        self.length = length
-        self.temperature = temperature
-        self.top_k = top_k
-        self.top_p = top_p
-        self.device = device
-        self.padding_text = False if padding_text == "" else padding_text
+        # Load pretrained model and tokenizer
+        if args.local_rank not in [-1, 0]:
+            torch.distributed.barrier()  # Barrier to make sure only the first process in distributed training download model & vocab
+
+        config_class, self.model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+        self.config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path)
+        self.tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path, do_lower_case=args.do_lower_case)
+        if args.block_size <= 0:
+            args.block_size = self.tokenizer.max_len  # Our input block size will be the max possible for the model
+        args.block_size = min(args.block_size, self.tokenizer.max_len)
+        self.model = self.model_class.from_pretrained(args.model_name_or_path, from_tf=bool('.ckpt' in args.model_name_or_path), config=self.config)
+        self.model.to(args.device)
+        self.args = args
+
+        if args.local_rank == 0:
+            torch.distributed.barrier()  # End of barrier to make sure only the first process in distributed training download model & vocab
+
     
     def sample(self, num_samples: int):
-        if self.length < 0 and self.model.config.max_position_embeddings > 0:
-            self.length = self.model.config.max_position_embeddings
-        elif 0 < self.model.config.max_position_embeddings < self.length:
-            self.length = self.model.config.max_position_embeddings  # No generation bigger than model size 
-        elif self.length < 0:
-            self.length = MAX_LENGTH  # avoid infinite loop
+        if self.args.length < 0 and self.config.max_position_embeddings > 0:
+            self.length = self.config.max_position_embeddings
+        elif 0 < self.config.max_position_embeddings < self.args.length:
+            self.args.length = self.config.max_position_embeddings  # No generation bigger than model size 
+        elif self.args.length < 0:
+            self.args.length = MAX_LENGTH  # avoid infinite loop
 
         raw_text = "what"
-        if self.model_type in ["transfo-xl", "xlnet"]:
+        if self.args.model_type in ["transfo-xl", "xlnet"]:
             # Models with memory likes to have a long prompt for short inputs.
-            raw_text = (self.padding_text if self.padding_text else PADDING_TEXT) + raw_text
+            raw_text = (self.args.padding_text if self.args.padding_text else PADDING_TEXT) + raw_text
 
         list_of_samples = []
         for sample_num in range(num_samples):
@@ -82,12 +86,12 @@ class PretrainedTransformerGenerator(nn.Module):
             out = self.sample_sequence(
                 model=self.model,
                 context=context_tokens,
-                length=self.length,
-                temperature=self.temperature,
-                top_k=self.top_k,
-                top_p=self.top_p,
-                device=self.device,
-                is_xlnet=bool(self.model_type == "xlnet"),
+                length=self.args.length,
+                temperature=self.args.temperature,
+                top_k=self.args.top_k,
+                top_p=self.args.top_p,
+                device=self.args.device,
+                is_xlnet=bool(self.args.model_type == "xlnet"),
             )
             out = out[0, len(context_tokens):].tolist()
             list_of_samples.append(out)
@@ -102,8 +106,8 @@ class PretrainedTransformerGenerator(nn.Module):
             final_outputs.append(decoded_sample)
         return final_outputs
 
-    def forward(self, inputs, hidden):
-        return self.model(inputs.unsqueeze(dim=0), hidden.long())
+    def forward(self, inputs, **kwargs):
+        return self.model(inputs, **kwargs)
 
     def sample_sequence(self, length, model, context, num_samples=1, temperature=1, top_k=0, top_p=0.0, is_xlnet=False, device='cpu'):
         context = torch.tensor(context, dtype=torch.long, device=device)
