@@ -16,77 +16,54 @@ from torch.utils.data import Dataset, DataLoader
 import models.generator as generator
 import models.discriminator as discriminator
 import utils.helpers as helpers
-from utils.load_data import (get_dataloaders, GenerationDatasetList, DiscriminatorDatasetFromList, get_data, get_data_for_generator,
+from utils.load_data import (get_dataloaders, DiscriminatorDatasetFromFile, DiscriminatorDatasetFromList, 
                                 load_and_cache_examples_generator, TextDataset, load_and_cache_examples)
 
 import utils.argparser
 
+from metrics.loss import get_losses
+
 from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
 
-from models.training_functions import evaluate_discriminator, train_discriminator, evaluate_generator, train_generator, prepare_opt_and_scheduler
-
+from models.training_functions import (train_generator_mle, prepare_opt_and_scheduler, discriminator_eval)
+ 
 logger = logging.getLogger(__name__)
 
 MLE_TRAIN_EPOCHS = 100
 ADV_TRAIN_EPOCHS = 50
 
-def run_epochs(args, model, tokenizer, optimizer, scheduler, is_discriminator: bool = True, given_dataset_train = None, given_dataset_val = None):
-    """
-    The default function to train and evaluate for `n_epochs` and return the results
-    """
-    train = train_discriminator if is_discriminator else train_generator
-    evaluate = evaluate_discriminator if is_discriminator else evaluate_generator
-    task_type = "cola" if is_discriminator else "gan"
-    print("Evaluating on type: {} for {}".format(task_type, "discriminator" if is_discriminator else "generator"))
 
-    # Training
-    if args.do_train:
+def adversarial_train(args, gen, dis, tokenizer, optimizer, scheduler, real_dataset, num_steps, is_discriminator = True):
+    total_loss = 0
+    logger.info("Generating {} samples...".format(len(real_dataset)))
+    generated_dataset = DiscriminatorDatasetFromList(gen.sample_text(len(real_dataset)), label="0")
+    for step in range(num_steps):
+        # create real and generated dataloaders TODO: turn off evaluate=True after debugging is done
+        generated_dataset = load_and_cache_examples(args, "cola", tokenizer, generated_dataset, evaluate=True)
+        # run both real and fake data
+        d_out_real = discriminator_eval(args, real_dataset, dis, tokenizer)
+        d_out_fake = discriminator_eval(args, generated_dataset, dis, tokenizer)
+        # compute losses and return the relevant one
         if is_discriminator:
-            train_dataset = load_and_cache_examples(args, task_type, tokenizer, given_dataset_train, evaluate=False)
+            _, loss = get_losses(d_out_real, d_out_fake, args.loss_type)
         else:
-            train_dataset = load_and_cache_examples_generator(args, tokenizer, evaluate=False)
-        global_step, tr_loss = train(args, train_dataset, model, tokenizer, optimizer, scheduler)
-        logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
+            loss, _ = get_losses(d_out_real, d_out_fake, args.loss_type)
+
+        optimize(optimizer, loss, dis if is_discriminator else gen)
+        total_loss += loss.item()
+
+    average_loss = total_loss / num_steps if num_steps != 0 else 0
+    print("#### Average Loss: {} ####".format(total_loss))
+    return average_loss
 
 
-    # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
-    if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        # Create output directory if needed
-        if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
-            os.makedirs(args.output_dir)
-
-        logger.info("Saving model checkpoint to %s", args.output_dir)
-        # Save a trained model, configuration and tokenizer using `save_pretrained()`.
-        # They can then be reloaded using `from_pretrained()`
-        model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
-        model_to_save.model.model.save_pretrained(args.output_dir)
-        tokenizer.save_pretrained(args.output_dir)
-
-        # Good practice: save your training arguments together with the trained model
-        torch.save(args, os.path.join(args.output_dir, 'training_args.bin'))
-
-    # Evaluation TODO: add this to the run_gan.sh script
-    results = {}
-    if args.do_eval and args.local_rank in [-1, 0]:
-        checkpoints = [args.output_dir]
-        if args.eval_all_checkpoints:
-            checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
-            logging.getLogger("pytorch_transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
-        logger.info("Evaluate the following checkpoints: %s", checkpoints)
-        if is_discriminator:
-            eval_dataset = load_and_cache_examples(args, task_type, tokenizer, given_dataset_val, evaluate=True)
-        else:
-            eval_dataset = load_and_cache_examples_generator(args, tokenizer, evaluate=True)
-        for checkpoint in checkpoints:
-            global_step = checkpoint.split('-')[-1] if len(checkpoints) > 1 else ""
-            model.model = model.model.model_class.from_pretrained(checkpoint)
-            model.to(args.device)
-            result = evaluate(args, model, tokenizer, eval_dataset, prefix=global_step)
-            result = dict((k + '_{}'.format(global_step), v) for k, v in result.items())
-            results.update(result)
-
-    return results
+def optimize(opt, loss, model=None, retain_graph=False):
+    opt.zero_grad()
+    loss.backward(retain_graph=retain_graph)
+    # if model is not None: # TODO: add clip norm
+    #     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_norm)
+    opt.step()
 
 
 if __name__ == '__main__':
@@ -117,12 +94,6 @@ if __name__ == '__main__':
     # Set seed
     helpers.set_seed(args)
 
-    # get data
-    # TODO: these are not used. Remove them?
-    training_set_generator = get_data(os.path.join("data", "emnlp_news", "train.csv"))
-    true_samples_val = get_data(os.path.join("data", "emnlp_news", "val.csv"))
-    train_sample_length = len(true_samples_val)
-
     logger.info("Training/evaluation parameters %s", args)
     # get models
     gen = generator.Generator(args)
@@ -133,31 +104,37 @@ if __name__ == '__main__':
     # assign tokenizers
     tokenizer_gen = gen.tokenizer
     tokenizer_dis = dis.tokenizer
+    mle_pretraining = True
 
-    gen, gen_optimizer, gen_scheduler = prepare_opt_and_scheduler(args, gen, train_sample_length)
-    dis, dis_optimizer, dis_scheduler = prepare_opt_and_scheduler(args, dis, train_sample_length)
+    # prepare main dataset
+    loaded_val_dataset = DiscriminatorDatasetFromFile(args.eval_data_file, label="1")
+    loaded_train_dataset = DiscriminatorDatasetFromFile(args.train_data_file, label="1")
+    real_train_dataset = load_and_cache_examples(args, "cola", tokenizer_dis, loaded_train_dataset, evaluate=True)
+    real_val_dataset = load_and_cache_examples(args, "cola", tokenizer_dis, loaded_train_dataset, evaluate=True)
 
+    # prepare optimizers and schedulers
+    gen, gen_optimizer, gen_scheduler = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
+    dis, dis_optimizer, dis_scheduler = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
+    if mle_pretraining:
+        _, gen_mle_optimizer, gen_mle_scheduler = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
 
-    # # GENERATOR MLE TRAINING # TODO add MLE training first for adaptation?
-    # print('Starting Generator MLE Training...')
-    # gen_optimizer = optim.Adam(gen.parameters(), lr=1e-2)
-    # train_generator_MLE(gen, gen_optimizer, oracle, oracle_samples, MLE_TRAIN_EPOCHS)
+    logger.info('### Starting Generator MLE Training... ###')
+    if mle_pretraining:
+        train_dataset = load_and_cache_examples_generator(args, tokenizer_gen, evaluate=False)
+        eval_dataset = load_and_cache_examples_generator(args, tokenizer_gen, evaluate=True)
+        train_generator_mle(args, train_dataset, gen, tokenizer_gen, gen_mle_optimizer, gen_mle_scheduler, eval_dataset)
+
     # TODO: add loading model config and test it
 
     # ADVERSARIAL TRAINING
-    print('\nStarting Adversarial Training...')
+    logger.info('### Starting Adversarial Training... ###')
     for epoch in range(ADV_TRAIN_EPOCHS):
-        print('\n--------\nGAN EPOCH %d\n--------' % (epoch+1))
+        
+        logger.info('### GAN EPOCH: {} ###'.format(epoch))
         # TRAIN GENERATOR
-        print('\nAdversarial Training Generator : ', end='')
-        sys.stdout.flush()
-        run_epochs(args, gen, tokenizer_gen, gen_optimizer, gen_scheduler, is_discriminator=False)
+        adversarial_train(args, gen, dis, tokenizer_gen, gen_optimizer, gen_scheduler, real_train_dataset, 1, is_discriminator=False)
 
         # TRAIN DISCRIMINATOR
-        # TODO make dataset with generator
-        print('Generating the negative samples for the discriminator')
-        negative_samples = gen.sample_text(train_sample_length)
-        print("The Generators output is: {}".format(" ".join([sentence for sentence in negative_samples])))
-        training_set_discriminator = get_data_for_generator(os.path.join("data", "emnlp_news", "val.csv"), negative_samples)
-        print('\nAdversarial Training Discriminator : ')    
-        run_epochs(args, dis, tokenizer_dis, dis_optimizer, dis_scheduler, given_dataset_train=training_set_discriminator, given_dataset_val=training_set_discriminator)
+        adversarial_train(args, gen, dis, tokenizer_dis, dis_optimizer, dis_scheduler, real_train_dataset, 1)
+
+        # Add saving model config and test it

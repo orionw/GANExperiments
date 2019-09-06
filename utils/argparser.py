@@ -40,6 +40,8 @@ def parse_all_args(arglist):
                     help="An optional input evaluation data file to evaluate the perplexity on (a text file).")
      parser.add_argument("--model_type", default="bert", type=str,
                     help="The model architecture to be fine-tuned.")
+     parser.add_argument("--loss_type", type=str, default="RSGAN",
+               help="What type of loss to use for gan training")
      parser.add_argument("--mlm", action='store_true',
                     help="Train with masked-language modeling loss instead of language modeling.")
      parser.add_argument("--mlm_probability", type=float, default=0.15,

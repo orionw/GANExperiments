@@ -26,76 +26,37 @@ def get_dataloaders(root_path: str, header: bool = None, batch_size: int = 48, d
     dataloader = DataLoader(dataset, batch_size=batch_size, pin_memory=True, shuffle=shuffle, num_workers=n_workers)
     return dataloader
 
-def get_data(root_path: str, header: bool = None, batch_size: int = 48, device: str = "0",
-                    shuffle=True, n_workers=1):
-    """
-    A function to return PyTorch dataloaders for a given csv file(s).
-    :param root_path: the path where the dataset lives
-    :param header: whether or not to return a header
-    """
-    dataset = GenerationDataset(root_path, header=header)
-    return dataset
 
-
-def get_data_for_generator(root_path: str, negative_samples, header: bool = None, batch_size: int = 48, device: str = "0",
-                    shuffle=True, n_workers=1):
-    """
-    A function to return PyTorch dataloaders for a given csv file(s).
-    :param root_path: the path where the dataset lives
-    :param header: whether or not to return a header
-    """
-    dataset = DiscriminatorDatasetFromList(GenerationDataset(root_path, header=header).data[0].tolist(), negative_samples)
-    return dataset
-
-
-class GenerationDataset(Dataset):
+class DiscriminatorDatasetFromFile(Dataset):
     """
     A class to hold natural language text only, no label
     """
-    def __init__(self, path: str, header: bool = None):
+    def __init__(self, path: str, header: bool = None, label = "0"):
         self.data = pd.read_csv(path, header=header, sep="\n")
         assert self.data.shape[1] == 1, "has to many columns for natural language only dataset: {}".format(data.shape[1])
-        
-    def __len__(self):
-        return self.data.shape[0]
-
-    def __getitem__(self, index):
-        # grab the line needed
-        return self.data.iloc[index, :][0]
-
-
-class GenerationDatasetList(Dataset):
-    """
-    A class to hold natural language text only, no label, made from a list object
-    """
-    def __init__(self, text_list: list):
-        self.data = text_list
-
+        self.label = label
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, index):
         # grab the line needed
-        return self.data[index]
+        return self.data.iloc[index, 0], self.label
 
 
 class DiscriminatorDatasetFromList(Dataset):
     """
-    A class to hold natural language text and labels, from two lists
+    A class to hold natural language text only, no label, made from a list object
     """
-    def __init__(self, positive: list, negative: list):
-        pos = pd.DataFrame({"text": positive, "label": "1"})
-        neg = pd.DataFrame({"text": negative, "label": "0"})
-        self.data = pd.concat([pos, neg], axis=0)
-        self.data.sample(frac=1)
+    def __init__(self, text_list: list, label = "0"):
+        self.data = text_list
+        self.label = label
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, index):
         # grab the line needed
-        return self.data.iloc[index, :][0], self.data.iloc[index, :][1]
-
+        return self.data[index], self.label
 
 
 class TextDataset(Dataset):
@@ -109,7 +70,7 @@ class TextDataset(Dataset):
             with open(cached_features_file, 'rb') as handle:
                 self.examples = pickle.load(handle)
         else:
-            logger.info("Creating features from dataset file at %s", directory)
+            logger.info("Creating features from dataset file at %s/%s", directory, file_path)
 
             self.examples = []
             with open(file_path, encoding="utf-8") as f:
@@ -119,8 +80,8 @@ class TextDataset(Dataset):
             while len(tokenized_text) >= block_size:  # Truncate in block of block_size
                 self.examples.append(tokenizer.add_special_tokens_single_sentence(tokenized_text[:block_size]))
                 tokenized_text = tokenized_text[block_size:]
-            # Note that we are loosing the last truncated example here for the sake of simplicity (no padding)
-            # If your dataset is small, first you should loook for a bigger one :-) and second you
+            # Note that we are losing the last truncated example here for the sake of simplicity (no padding)
+            # If your dataset is small, first you should look for a bigger one :-) and second you
             # can change this behavior by adding (model specific) padding.
 
             logger.info("Saving features into cached file %s", cached_features_file)
@@ -135,7 +96,7 @@ class TextDataset(Dataset):
 
 
 def load_and_cache_examples_generator(args, tokenizer, evaluate=False):
-    dataset = TextDataset(tokenizer, file_path=args.eval_data_file if evaluate else args.train_data_file, block_size=16)
+    dataset = TextDataset(tokenizer, file_path=args.eval_data_file if evaluate else args.train_data_file, block_size=64)
     return dataset
 
 def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False):
@@ -186,6 +147,10 @@ def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False):
     elif output_mode == "regression":
         all_label_ids = torch.tensor([f.label_id for f in features], dtype=torch.float)
 
-    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
+    if output_mode != "gan":
+        dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
+    else:
+        dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids)
+
     return dataset
 

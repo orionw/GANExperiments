@@ -120,17 +120,17 @@ class PretrainedTransformerGenerator(nn.Module):
                 if is_xlnet: 
                     # XLNet is a direct (predict same token, not next token) and bi-directional model by default
                     # => need one additional dummy token in the input (will be masked), attention mask and target mapping (see model docstring)
-                    input_ids = torch.cat((generated, torch.zeros((1, 1), dtype=torch.long, device=device)), dim=1)
-                    perm_mask = torch.zeros((1, input_ids.shape[1], input_ids.shape[1]), dtype=torch.float, device=device)
+                    input_ids = torch.cat((generated, torch.zeros((num_samples, 1), dtype=torch.long, device=device)), dim=1)
+                    perm_mask = torch.zeros((num_samples, input_ids.shape[1], input_ids.shape[1]), dtype=torch.float, device=device)
                     perm_mask[:, :, -1] = 1.0  # Previous tokens don't see last token
-                    target_mapping = torch.zeros((1, 1, input_ids.shape[1]), dtype=torch.float, device=device)
+                    target_mapping = torch.zeros((num_samples, 1, input_ids.shape[1]), dtype=torch.float, device=device)
                     target_mapping[0, 0, -1] = 1.0  # predict last token
                     inputs = {'input_ids': input_ids, 'perm_mask': perm_mask, 'target_mapping': target_mapping}
 
                 outputs = model(**inputs)  # Note: we could also use 'past' with GPT-2/Transfo-XL/XLNet (cached hidden-states)
                 next_token_logits = outputs[0][0, -1, :] / temperature
                 filtered_logits = self.top_k_top_p_filtering(next_token_logits, top_k=top_k, top_p=top_p)
-                next_token = torch.multinomial(F.softmax(filtered_logits, dim=-1), num_samples=1)
+                next_token = torch.multinomial(F.softmax(filtered_logits, dim=-1), num_samples=num_samples)
                 generated = torch.cat((generated, next_token.unsqueeze(0)), dim=1)
         return generated
 
@@ -169,3 +169,13 @@ class PretrainedTransformerGenerator(nn.Module):
         torch.manual_seed(seed)
         if n_gpu > 0:
             torch.cuda.manual_seed_all(seed)
+
+    @staticmethod
+    def add_gumbel(o_t, eps=1e-10, gpu=True):
+        """Add o_t by a vector sampled from Gumbel(0,1)"""
+        u = torch.rand(o_t.size())
+        if gpu:
+            u = u.cuda()
+        g_t = -torch.log(-torch.log(u + eps) + eps)
+        gumbel_t = o_t + g_t
+        return gumbel_t

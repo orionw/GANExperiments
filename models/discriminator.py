@@ -36,7 +36,7 @@ class Discriminator(nn.Module):
             return h
 
     def forward(self, **kwargs):
-        return self.model.forward(**kwargs)
+        return self.model(**kwargs)
 
 
     def batchBCELoss(self, inp, target):

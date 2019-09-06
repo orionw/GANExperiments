@@ -119,19 +119,18 @@ class ColaProcessor(DataProcessor):
 class GANProcessor(DataProcessor):
     """Processor for the LM."""
 
-    def get_train_examples(self, data_dir):
+    def get_train_examples(self, dataset: pd.DataFrame):
         """See base class."""
-        return self._create_examples(
-            self._read_csv(os.path.join(data_dir, "train.csv")), "train")
+        return self._create_examples(dataset, "train")
 
-    def get_dev_examples(self, data_dir):
+    def get_dev_examples(self, dataset: pd.DataFrame):
         """See base class."""
-        return self._create_examples(
-            self._read_csv(os.path.join(data_dir, "dev.csv")), "dev")
+        return self._create_examples(dataset, "dev")
+
 
     def get_labels(self):
         """See base class."""
-        return ["0", "1"]
+        return ["0"]
 
     def _create_examples(self, lines, set_type):
         """Creates examples for the training and dev sets."""
@@ -242,12 +241,16 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
         assert len(input_ids) == max_seq_length
         assert len(input_mask) == max_seq_length
         assert len(segment_ids) == max_seq_length
-
-        if output_mode == "classification":
-            label_id = label_map[example.label]
-        elif output_mode == "regression":
-            label_id = float(example.label)
-        else:
+        try:
+            if output_mode == "classification":
+                label_id = label_map[example.label]
+            elif output_mode == "regression":
+                label_id = float(example.label)
+            elif output_mode == "gan":
+                label_id = 0
+        except Exception as e:
+            print(label_map, example.label, e)
+            import pdb; pdb.set_trace()
             raise KeyError(output_mode)
 
         if ex_index < 5:
@@ -299,38 +302,10 @@ def acc_and_f1(preds, labels):
     }
 
 
-def pearson_and_spearman(preds, labels):
-    pearson_corr = pearsonr(preds, labels)[0]
-    spearman_corr = spearmanr(preds, labels)[0]
-    return {
-        "pearson": pearson_corr,
-        "spearmanr": spearman_corr,
-        "corr": (pearson_corr + spearman_corr) / 2,
-    }
-
-
 def compute_metrics(task_name, preds, labels):
     assert len(preds) == len(labels)
     if task_name == "cola":
         return {"mcc": matthews_corrcoef(labels, preds), "acc/f1": acc_and_f1(preds, labels)} 
-    elif task_name == "sst-2":
-        return {"acc": simple_accuracy(preds, labels)}
-    elif task_name == "mrpc":
-        return acc_and_f1(preds, labels)
-    elif task_name == "sts-b":
-        return pearson_and_spearman(preds, labels)
-    elif task_name == "qqp":
-        return acc_and_f1(preds, labels)
-    elif task_name == "mnli":
-        return {"acc": simple_accuracy(preds, labels)}
-    elif task_name == "mnli-mm":
-        return {"acc": simple_accuracy(preds, labels)}
-    elif task_name == "qnli":
-        return {"acc": simple_accuracy(preds, labels)}
-    elif task_name == "rte":
-        return {"acc": simple_accuracy(preds, labels)}
-    elif task_name == "wnli":
-        return {"acc": simple_accuracy(preds, labels)}
     elif task_name == "gan":
         return {"nll": simple_accuracy(preds, labels)}
     else:
@@ -342,7 +317,7 @@ processors = {
 }
 
 output_modes = {
-    "gan": "classification",
+    "gan": "gan",
     "cola": "classification",
 }
 
