@@ -37,13 +37,13 @@ ADV_TRAIN_EPOCHS = 50
 def adversarial_train(args, gen, dis, tokenizer, optimizer, scheduler, real_dataset, num_steps, is_discriminator = True):
     total_loss = 0
     logger.info("Generating {} samples...".format(len(real_dataset)))
-    generated_samples = gen.sample_text(len(real_dataset))
+    generated_samples = gen.sample_text(30)
     generated_dataset = DiscriminatorDatasetFromList(generated_samples, label="0")
     if not is_discriminator:
         print("\n\n The generated samples are: ", generated_samples[:10], "\n\n")
+    # create real and generated dataloaders TODO: turn off evaluate=True after debugging is done
+    generated_dataset = load_and_cache_examples(args, "cola", tokenizer, generated_dataset, evaluate=True)
     for step in range(num_steps):
-        # create real and generated dataloaders TODO: turn off evaluate=True after debugging is done
-        generated_dataset = load_and_cache_examples(args, "cola", tokenizer, generated_dataset, evaluate=True)
         # run both real and fake data
         d_out_real = discriminator_eval(args, real_dataset, dis, tokenizer)
         d_out_fake = discriminator_eval(args, generated_dataset, dis, tokenizer)

@@ -96,7 +96,7 @@ class TextDataset(Dataset):
 
 
 def load_and_cache_examples_generator(args, tokenizer, evaluate=False):
-    dataset = TextDataset(tokenizer, file_path=args.eval_data_file if evaluate else args.train_data_file, block_size=64)
+    dataset = TextDataset(tokenizer, file_path=args.eval_data_file if evaluate else args.train_data_file, block_size=32)
     return dataset
 
 def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False):
