@@ -14,6 +14,8 @@ from pytorch_transformers import OpenAIGPTLMHeadModel, OpenAIGPTTokenizer
 from pytorch_transformers import XLNetLMHeadModel, XLNetTokenizer
 from pytorch_transformers import TransfoXLLMHeadModel, TransfoXLTokenizer
 
+from metrics.loss import gumbel_softmax
+
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
                     level = logging.INFO)
@@ -67,7 +69,7 @@ class PretrainedTransformerGenerator(nn.Module):
             torch.distributed.barrier()  # End of barrier to make sure only the first process in distributed training download model & vocab
 
     
-    def sample(self, num_samples: int):
+    def sample(self, num_samples: int = 1):
         if self.args.length < 0 and self.config.max_position_embeddings > 0:
             self.length = self.config.max_position_embeddings
         elif 0 < self.config.max_position_embeddings < self.args.length:
@@ -85,6 +87,7 @@ class PretrainedTransformerGenerator(nn.Module):
             context_tokens = self.tokenizer.encode(raw_text)
             out = self.sample_sequence(
                 model=self.model,
+                num_samples=num_samples,
                 context=context_tokens,
                 length=self.args.length,
                 temperature=self.args.temperature,
@@ -99,7 +102,7 @@ class PretrainedTransformerGenerator(nn.Module):
         return list_of_samples
 
     def sample_text(self, num_samples: int):
-        outputs = self.sample(num_samples)
+        outputs = self.sample(10)
         final_outputs = []
         for sample in outputs:
             decoded_sample = self.tokenizer.decode(sample, clean_up_tokenization_spaces=True)
@@ -128,9 +131,10 @@ class PretrainedTransformerGenerator(nn.Module):
                     inputs = {'input_ids': input_ids, 'perm_mask': perm_mask, 'target_mapping': target_mapping}
 
                 outputs = model(**inputs)  # Note: we could also use 'past' with GPT-2/Transfo-XL/XLNet (cached hidden-states)
-                next_token_logits = outputs[0][0, -1, :] / temperature
+                next_token_logits = outputs[0][:, -1, :] / temperature
                 filtered_logits = self.top_k_top_p_filtering(next_token_logits, top_k=top_k, top_p=top_p)
-                next_token = torch.multinomial(F.softmax(filtered_logits, dim=-1), num_samples=num_samples)
+                next_token = torch.multinomial(F.softmax(filtered_logits, dim=-1), num_samples=1)
+                import pdb; pdb.set_trace()
                 generated = torch.cat((generated, next_token.unsqueeze(0)), dim=1)
         return generated
 
@@ -143,25 +147,26 @@ class PretrainedTransformerGenerator(nn.Module):
                     Nucleus filtering is described in Holtzman et al. (http://arxiv.org/abs/1904.09751)
             From: https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
         """
-        assert logits.dim() == 1  # batch size 1 for now - could be updated for more but the code would be less clear
+        # I am vectorizing it... ignore next comment
+        # assert logits.dim() == 1  # batch size 1 for now - could be updated for more but the code would be less clear
         top_k = min(top_k, logits.size(-1))  # Safety check
         if top_k > 0:
             # Remove all tokens with a probability less than the last token of the top-k
             indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
             logits[indices_to_remove] = filter_value
 
-        if top_p > 0.0:
-            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-            cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+        # if top_p > 0.0:
+        #     sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+        #     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
 
-            # Remove tokens with cumulative probability above the threshold
-            sorted_indices_to_remove = cumulative_probs > top_p
-            # Shift the indices to the right to keep also the first token above the threshold
-            sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-            sorted_indices_to_remove[..., 0] = 0
+        #     # Remove tokens with cumulative probability above the threshold
+        #     sorted_indices_to_remove = cumulative_probs > top_p
+        #     # Shift the indices to the right to keep also the first token above the threshold
+        #     sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+        #     sorted_indices_to_remove[..., 0] = 0
 
-            indices_to_remove = sorted_indices[sorted_indices_to_remove]
-            logits[indices_to_remove] = filter_value
+        #     indices_to_remove = sorted_indices[sorted_indices_to_remove]
+        #     logits[indices_to_remove] = filter_value
         return logits
 
     def set_seed(self, args):

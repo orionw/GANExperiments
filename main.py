@@ -107,7 +107,6 @@ if __name__ == '__main__':
     # assign tokenizers
     tokenizer_gen = gen.tokenizer
     tokenizer_dis = dis.tokenizer
-    mle_pretraining = True
 
     # prepare main dataset
     loaded_val_dataset = DiscriminatorDatasetFromFile(args.eval_data_file, label="1")
@@ -118,11 +117,11 @@ if __name__ == '__main__':
     # prepare optimizers and schedulers
     gen, gen_optimizer, gen_scheduler = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
     dis, dis_optimizer, dis_scheduler = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
-    if mle_pretraining:
+    if args.mle_pretraining:
         _, gen_mle_optimizer, gen_mle_scheduler = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
 
     logger.info('### Starting Generator MLE Training... ###')
-    if mle_pretraining:
+    if args.mle_pretraining:
         train_dataset = load_and_cache_examples_generator(args, tokenizer_gen, evaluate=False)
         eval_dataset = load_and_cache_examples_generator(args, tokenizer_gen, evaluate=True)
         train_generator_mle(args, train_dataset, gen, tokenizer_gen, gen_mle_optimizer, gen_mle_scheduler, eval_dataset)

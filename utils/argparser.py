@@ -111,6 +111,8 @@ def parse_all_args(arglist):
                     help="random seed for initialization")
      parser.add_argument('--fp16', action='store_true',
                     help="Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit")
+     parser.add_argument('--mle_pretraining', action='store_true', default=False,
+                    help="Whether to pre-train the generator on the data via MLE")
      parser.add_argument('--fp16_opt_level', type=str, default='O1',
                     help="For fp16: Apex AMP optimization level selected in ['O0', 'O1', 'O2', and 'O3']."
                          "See details at https://nvidia.github.io/apex/amp.html")

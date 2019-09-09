@@ -2,14 +2,16 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import torch.nn.functional as F
 
 latent_dim = 20
 categorical_dim = 10 # one-of-K vector
 
 
 def sample_gumbel(shape, eps=1e-20):
-    U = torch.rand(shape).cuda()
-    return -Variable(torch.log(-torch.log(U + eps) + eps))
+    U = torch.rand(shape)
+    sample = -Variable(torch.log(-torch.log(U + eps) + eps)).cuda()
+    return sample
 
 
 def gumbel_softmax_sample(logits, temperature):
