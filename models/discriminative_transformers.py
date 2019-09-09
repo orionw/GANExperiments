@@ -50,13 +50,13 @@ class PretrainedDiscriminativeTransformer(nn.Module):
         if args.local_rank not in [-1, 0]:
             torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
-        args.model_type = args.model_type.lower()
+        args.dis_model_type = args.dis_model_type.lower()
         num_labels = 2 # only generator and real samples
         finetuning_task = "cola" # classification
-        config_class, self.model_class, self.tokenizer_class = MODEL_CLASSES[args.model_type]
-        config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path, num_labels=num_labels, finetuning_task=finetuning_task)
-        self.tokenizer = self.tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path, do_lower_case=args.do_lower_case)
-        self.model = self.model_class.from_pretrained(args.model_name_or_path, from_tf=bool('.ckpt' in args.model_name_or_path), config=config)
+        config_class, self.model_class, self.tokenizer_class = MODEL_CLASSES[args.dis_model_type]
+        config = config_class.from_pretrained(args.config_name if args.config_name else args.dis_model_name_or_path, num_labels=num_labels, finetuning_task=finetuning_task)
+        self.tokenizer = self.tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.dis_model_name_or_path, do_lower_case=args.do_lower_case)
+        self.model = self.model_class.from_pretrained(args.dis_model_name_or_path, from_tf=bool('.ckpt' in args.dis_model_name_or_path), config=config)
 
         if args.local_rank == 0:
             torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab

@@ -53,13 +53,13 @@ class PretrainedTransformerGenerator(nn.Module):
         if args.local_rank not in [-1, 0]:
             torch.distributed.barrier()  # Barrier to make sure only the first process in distributed training download model & vocab
 
-        config_class, self.model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-        self.config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path)
-        self.tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path, do_lower_case=args.do_lower_case)
+        config_class, self.model_class, tokenizer_class = MODEL_CLASSES[args.gen_model_type]
+        self.config = config_class.from_pretrained(args.config_name if args.config_name else args.gen_model_name_or_path)
+        self.tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.gen_model_name_or_path, do_lower_case=args.do_lower_case)
         if args.block_size <= 0:
             args.block_size = self.tokenizer.max_len  # Our input block size will be the max possible for the model
         args.block_size = min(args.block_size, self.tokenizer.max_len)
-        self.model = self.model_class.from_pretrained(args.model_name_or_path, from_tf=bool('.ckpt' in args.model_name_or_path), config=self.config)
+        self.model = self.model_class.from_pretrained(args.gen_model_name_or_path, from_tf=bool('.ckpt' in args.gen_model_name_or_path), config=self.config)
         self.model.to(args.device)
         self.args = args
 
@@ -76,7 +76,7 @@ class PretrainedTransformerGenerator(nn.Module):
             self.args.length = MAX_LENGTH  # avoid infinite loop
 
         raw_text = "what"
-        if self.args.model_type in ["transfo-xl", "xlnet"]:
+        if self.args.gen_model_type in ["transfo-xl", "xlnet"]:
             # Models with memory likes to have a long prompt for short inputs.
             raw_text = (self.args.padding_text if self.args.padding_text else PADDING_TEXT) + raw_text
 
@@ -91,7 +91,7 @@ class PretrainedTransformerGenerator(nn.Module):
                 top_k=self.args.top_k,
                 top_p=self.args.top_p,
                 device=self.args.device,
-                is_xlnet=bool(self.args.model_type == "xlnet"),
+                is_xlnet=bool(self.args.gen_model_type == "xlnet"),
             )
             out = out[0, len(context_tokens):].tolist()
             list_of_samples.append(out)

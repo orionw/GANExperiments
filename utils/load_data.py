@@ -108,7 +108,7 @@ def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False):
     # Load data features from cache or dataset file
     cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}'.format(
         'dev' if evaluate else 'train',
-        list(filter(None, args.model_name_or_path.split('/'))).pop(),
+        list(filter(None, args.dis_model_name_or_path.split('/'))).pop(),
         str(args.max_seq_length),
         str(task)))
     if os.path.exists(cached_features_file):
@@ -117,19 +117,19 @@ def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False):
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
         label_list = processor.get_labels()
-        if task in ['mnli', 'mnli-mm'] and args.model_type in ['roberta']:
+        if task in ['mnli', 'mnli-mm'] and args.dis_model_type in ['roberta']:
             # HACK(label indices are swapped in RoBERTa pretrained model)
             label_list[1], label_list[2] = label_list[2], label_list[1] 
         examples = processor.get_dev_examples(given_data) if evaluate else processor.get_train_examples(given_data)
         features = convert_examples_to_features(examples, label_list, args.max_seq_length, tokenizer, output_mode,
-            cls_token_at_end=bool(args.model_type in ['xlnet']),            # xlnet has a cls token at the end
+            cls_token_at_end=bool(args.dis_model_type in ['xlnet']),            # xlnet has a cls token at the end
             cls_token=tokenizer.cls_token,
-            cls_token_segment_id=2 if args.model_type in ['xlnet'] else 0,
+            cls_token_segment_id=2 if args.dis_model_type in ['xlnet'] else 0,
             sep_token=tokenizer.sep_token,
-            sep_token_extra=bool(args.model_type in ['roberta']),           # roberta uses an extra separator b/w pairs of sentences, cf. github.com/pytorch/fairseq/commit/1684e166e3da03f5b600dbb7855cb98ddfcd0805
-            pad_on_left=bool(args.model_type in ['xlnet']),                 # pad on the left for xlnet
+            sep_token_extra=bool(args.dis_model_type in ['roberta']),           # roberta uses an extra separator b/w pairs of sentences, cf. github.com/pytorch/fairseq/commit/1684e166e3da03f5b600dbb7855cb98ddfcd0805
+            pad_on_left=bool(args.dis_model_type in ['xlnet']),                 # pad on the left for xlnet
             pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-            pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,
+            pad_token_segment_id=4 if args.dis_model_type in ['xlnet'] else 0,
         )
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)

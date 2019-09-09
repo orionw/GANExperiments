@@ -14,11 +14,18 @@ from pytorch_transformers import (WEIGHTS_NAME, AdamW, WarmupLinearSchedule,
 
 ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (GPT2Config, OpenAIGPTConfig, XLNetConfig, TransfoXLConfig)), ())
 
-MODEL_CLASSES = {
+DISCRIMINATIVE_CLASSES = {
     'gpt2': (GPT2Config, GPT2LMHeadModel, GPT2Tokenizer),
     'openai-gpt': (OpenAIGPTConfig, OpenAIGPTLMHeadModel, OpenAIGPTTokenizer),
     'bert': (BertConfig, BertForMaskedLM, BertTokenizer),
     'roberta': (RobertaConfig, RobertaForMaskedLM, RobertaTokenizer)
+}
+
+GENERATIVE_CLASSES = {
+    'gpt2': (GPT2Config, GPT2LMHeadModel, GPT2Tokenizer),
+    'openai-gpt': (OpenAIGPTConfig, OpenAIGPTLMHeadModel, OpenAIGPTTokenizer),
+    'xlnet': (XLNetConfig, XLNetLMHeadModel, XLNetTokenizer),
+    'transfo-xl': (TransfoXLConfig, TransfoXLLMHeadModel, TransfoXLTokenizer),
 }
 
 def parse_all_args(arglist):
@@ -32,14 +39,18 @@ def parse_all_args(arglist):
                     help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
      parser.add_argument("--output_dir", default=None, type=str, required=True,
                     help="The output directory where the model predictions and checkpoints will be written.")                    
-     parser.add_argument("--model_name_or_path", default=None, type=str, required=True,
-               help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(ALL_MODELS))
-
+     parser.add_argument("--gen_model_name_or_path", default=None, type=str, required=True,
+                    help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(GENERATIVE_CLASSES))
+     parser.add_argument("--dis_model_name_or_path", default=None, type=str, required=True,
+                    help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(DISCRIMINATIVE_CLASSES))
+     parser.add_argument("--gen_model_type", default="bert", type=str,
+                    help="The model architecture to be fine-tuned.")
+     parser.add_argument("--dis_model_type", default="bert", type=str,
+                    help="The model architecture to be fine-tuned.")
      ## Other parameters
      parser.add_argument("--eval_data_file", default=None, type=str,
                     help="An optional input evaluation data file to evaluate the perplexity on (a text file).")
-     parser.add_argument("--model_type", default="bert", type=str,
-                    help="The model architecture to be fine-tuned.")
+
      parser.add_argument("--loss_type", type=str, default="RSGAN",
                help="What type of loss to use for gan training")
      parser.add_argument("--mlm", action='store_true',
