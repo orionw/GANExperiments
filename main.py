@@ -46,7 +46,7 @@ ADV_TRAIN_EPOCHS = 50
 def adversarial_train(args, gen, dis, tokenizer, optimizer, scheduler, real_dataset, num_steps, is_discriminator = True):
     total_loss = 0
     logger.info("Generating {} samples...".format(len(real_dataset)))
-    generated_samples = gen.sample_text(len(real_dataset))
+    generated_samples = gen.sample_text(200)
     generated_dataset = DiscriminatorDatasetFromList(generated_samples, label="0")
     if not is_discriminator:
         print("\n\n The generated samples are: ", generated_samples[:10], "\n\n")
@@ -69,8 +69,10 @@ def adversarial_train(args, gen, dis, tokenizer, optimizer, scheduler, real_data
 
     # multi-gpu training (should be after apex fp16 initialization)
     if args.n_gpu > 1:
-        model = torch.nn.DataParallel(model)
+       dis  = torch.nn.DataParallel(dis)
+       gen = torch.nn.DataParallel(gen)
 
+    import pdb; pdb.set_trace()
     # Distributed training (should be after apex fp16 initialization)
     if args.local_rank != -1:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
@@ -184,10 +186,10 @@ if __name__ == '__main__':
         # TRAIN GENERATOR
         loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_gen, gen_optimizer, gen_scheduler, 
                                                             real_train_dataset, 1, is_discriminator=False)
-        print("#### Average generator loss : {} ####".format(total_loss))
+        print("#### Average generator loss : {} ####".format(loss))
 
         # TRAIN DISCRIMINATOR
         loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_dis, dis_optimizer, dis_scheduler, real_train_dataset, 1)
-        print("#### Average disriminator loss : {} ####".format(total_loss))
+        print("#### Average disriminator loss : {} ####".format(loss))
 
         # Add saving model config and test it
