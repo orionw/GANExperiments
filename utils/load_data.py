@@ -32,7 +32,7 @@ class DiscriminatorDatasetFromFile(Dataset):
     A class to hold natural language text only, no label
     """
     def __init__(self, path: str, header: bool = None, label = "0"):
-        self.data = pd.read_csv(path, header=header, sep="\n")
+        self.data = pd.read_csv(path, header=header, sep="\n", encoding="utf-8")
         assert self.data.shape[1] == 1, "has to many columns for natural language only dataset: {}".format(data.shape[1])
         self.label = label
     def __len__(self):
@@ -57,6 +57,23 @@ class DiscriminatorDatasetFromList(Dataset):
     def __getitem__(self, index):
         # grab the line needed
         return self.data[index], self.label
+
+
+class DualDataset(Dataset):
+    """
+    A class to hold natural language text only, no label, made from a list object
+    """
+    def __init__(self, dataset1, dataset2):
+        self.d1 = dataset1
+        self.d2 = dataset2
+
+    def __len__(self):
+        # only cycle through equal lengths
+        return min(len(self.d1), len(self.d2))
+
+    def __getitem__(self, index):
+        # return both datasets at the same time
+        return self.d1[index], self.d2[index]
 
 
 class TextDataset(Dataset):
@@ -99,19 +116,24 @@ def load_and_cache_examples_generator(args, tokenizer, evaluate=False):
     dataset = TextDataset(tokenizer, file_path=args.eval_data_file if evaluate else args.train_data_file, block_size=32)
     return dataset
 
-def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False):
+def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False, no_cache=False):
+    """
+    No cache for generative datasets
+    """
     if args.local_rank not in [-1, 0] and not evaluate:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     processor = processors[task]()
     output_mode = output_modes[task]
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}_{}'.format(
         'dev' if evaluate else 'train',
         list(filter(None, args.dis_model_name_or_path.split('/'))).pop(),
         str(args.max_seq_length),
-        str(task)))
-    if os.path.exists(cached_features_file):
+        str(task),
+        str(int(no_cache))))
+    if os.path.exists(cached_features_file) and not no_cache:
+        # only cache non-generative samples
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
     else:

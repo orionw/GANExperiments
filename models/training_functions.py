@@ -33,66 +33,16 @@ from utils.utils_glue import (compute_metrics, convert_examples_to_features,
 logger = logging.getLogger(__name__)
 
 
-def discriminator_eval(args, train_dataset, model, tokenizer, prefix=""):
-    if args.local_rank in [-1, 0]:
-        tb_writer = SummaryWriter()
-
-    args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
-    train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
-
-    if args.max_steps > 0:
-        t_total = args.max_steps
-        args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.gradient_accumulation_steps) + 1
-    else:
-        t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
-
-    # multi-gpu training (should be after apex fp16 initialization)
-    if args.n_gpu > 1:
-        model = torch.nn.DataParallel(model)
-
-    # Distributed training (should be after apex fp16 initialization)
-    if args.local_rank != -1:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
-                                                          output_device=args.local_rank,
-                                                          find_unused_parameters=True)
-
-    # Train!
-    logger.info("***** Running discriminator training *****")
-    logger.info("  Num examples = %d", len(train_dataset))
-    logger.info("  Num Epochs = %d", args.num_train_epochs)
-    logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
-    logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",
-                   args.train_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1))
-    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
-    logger.info("  Total optimization steps = %d", t_total)
-
-    global_step = 0
-    tr_loss, logging_loss = 0.0, 0.0
-    model.zero_grad()
-    preds = None
-    train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
-    set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
-    for _ in train_iterator:
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
-        for step, batch in enumerate(epoch_iterator):
-            model.train()
-            batch = tuple(t.to(args.device) for t in batch)
-            inputs = {'input_ids':      batch[0],
-                      'attention_mask': batch[1],
-                      'token_type_ids': batch[2] if args.dis_model_type in ['bert', 'xlnet'] else None,  # XLM and RoBERTa don't use segment_ids
-                      'labels':         batch[3]}
-            outputs = model(**inputs)
-            loss, logits = outputs[:2]  # model outputs are always tuple in pytorch-transformers (see doc)
-            if preds is None:
-                preds = logits.cpu()
-                # out_label_ids = inputs['labels'].detach().cpu()
-            else:
-                preds = torch.cat((preds, logits.cpu()), axis=0)
-                # out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-    
-    # return logits
-    return preds
+def discriminator_eval(args, batch, model, tokenizer, prefix=""):
+    model.train()
+    batch = tuple(t.to(args.device) for t in batch)
+    inputs =  { 'input_ids':      batch[0],
+                'attention_mask': batch[1],
+                'token_type_ids': batch[2] if args.dis_model_type in ['bert', 'xlnet'] else None,  # XLM and RoBERTa don't use segment_ids
+                'labels':         batch[3]}
+    outputs = model(**inputs)
+    loss, logits = outputs[:2]
+    return logits
 
 
 def mask_tokens(inputs, tokenizer, args):

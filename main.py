@@ -16,12 +16,21 @@ from torch.utils.data import Dataset, DataLoader
 import models.generator as generator
 import models.discriminator as discriminator
 import utils.helpers as helpers
-from utils.load_data import (get_dataloaders, DiscriminatorDatasetFromFile, DiscriminatorDatasetFromList, 
+from utils.load_data import (get_dataloaders, DiscriminatorDatasetFromFile, DiscriminatorDatasetFromList, DualDataset,
                                 load_and_cache_examples_generator, TextDataset, load_and_cache_examples)
+
+
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
+                              TensorDataset)
+from torch.utils.data.distributed import DistributedSampler
+from tensorboardX import SummaryWriter
+from tqdm import tqdm, trange
 
 import utils.argparser
 
 from metrics.loss import get_losses
+
+from utils.helpers import set_seed
 
 from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
@@ -37,28 +46,68 @@ ADV_TRAIN_EPOCHS = 50
 def adversarial_train(args, gen, dis, tokenizer, optimizer, scheduler, real_dataset, num_steps, is_discriminator = True):
     total_loss = 0
     logger.info("Generating {} samples...".format(len(real_dataset)))
-    generated_samples = gen.sample_text(30)
+    generated_samples = gen.sample_text(len(real_dataset))
     generated_dataset = DiscriminatorDatasetFromList(generated_samples, label="0")
     if not is_discriminator:
         print("\n\n The generated samples are: ", generated_samples[:10], "\n\n")
     # create real and generated dataloaders TODO: turn off evaluate=True after debugging is done
-    generated_dataset = load_and_cache_examples(args, "cola", tokenizer, generated_dataset, evaluate=True)
-    for step in range(num_steps):
-        # run both real and fake data
-        d_out_real = discriminator_eval(args, real_dataset, dis, tokenizer)
-        d_out_fake = discriminator_eval(args, generated_dataset, dis, tokenizer)
-        # compute losses and return the relevant one
-        if is_discriminator:
-            _, loss = get_losses(d_out_real, d_out_fake, args.loss_type)
-        else:
-            loss, _ = get_losses(d_out_real, d_out_fake, args.loss_type)
+    generated_dataset = load_and_cache_examples(args, "cola", tokenizer, generated_dataset, evaluate=True, no_cache=True)
 
-        optimize(optimizer, loss, dis if is_discriminator else gen)
-        total_loss += loss.item()
+    if args.local_rank in [-1, 0]:
+        tb_writer = SummaryWriter()
 
-    average_loss = total_loss / num_steps if num_steps != 0 else 0
-    print("#### Average Loss: {} ####".format(total_loss))
-    return average_loss
+    args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
+    train_dataset = DualDataset(real_dataset, generated_dataset)
+    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
+    training_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+
+    if args.max_steps > 0:
+        t_total = args.max_steps
+        args.num_train_epochs = args.max_steps // (len(training_dataloader) // args.gradient_accumulation_steps) + 1
+    else:
+        t_total = len(training_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
+
+    # multi-gpu training (should be after apex fp16 initialization)
+    if args.n_gpu > 1:
+        model = torch.nn.DataParallel(model)
+
+    # Distributed training (should be after apex fp16 initialization)
+    if args.local_rank != -1:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
+                                                          output_device=args.local_rank,
+                                                          find_unused_parameters=True)
+
+    logger.info("***** Running adversarial training *****")
+    logger.info("  Num examples = %d", len(training_dataloader))
+    logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
+    logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",
+                   args.train_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1))
+    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
+    logger.info("  Total optimization steps = %d", t_total)
+
+
+    dis.zero_grad()
+    preds = None
+    train_iterator = trange(int(1), desc="Epoch", disable=args.local_rank not in [-1, 0])
+    set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
+    for _ in train_iterator:
+        epoch_iterator = tqdm(training_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+        for step, (real_batch, gen_batch) in enumerate(epoch_iterator):
+            # run both real and fake data
+            d_out_real = discriminator_eval(args, real_batch, dis, tokenizer)
+            d_out_fake = discriminator_eval(args, gen_batch, dis, tokenizer)
+            # compute losses and return the relevant one
+            assert d_out_real.shape == d_out_fake.shape, "shapes are not aligned, error"
+            if is_discriminator:
+                _, loss = get_losses(d_out_real, d_out_fake, args.loss_type)
+            else:
+                loss, _ = get_losses(d_out_real, d_out_fake, args.loss_type)
+
+            optimize(optimizer, loss, dis if is_discriminator else gen)
+            total_loss += loss.item()
+
+    average_loss = total_loss / step if step != 0 else 0
+    return average_loss, optimizer, gen, dis
 
 
 def optimize(opt, loss, model=None, retain_graph=False):
@@ -129,14 +178,16 @@ if __name__ == '__main__':
     # TODO: add loading model config and test it
 
     # ADVERSARIAL TRAINING
-    logger.info('### Starting Adversarial Training... ###')
     for epoch in range(ADV_TRAIN_EPOCHS):
         
         logger.info('### GAN EPOCH: {} ###'.format(epoch))
         # TRAIN GENERATOR
-        adversarial_train(args, gen, dis, tokenizer_gen, gen_optimizer, gen_scheduler, real_train_dataset, 1, is_discriminator=False)
+        loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_gen, gen_optimizer, gen_scheduler, 
+                                                            real_train_dataset, 1, is_discriminator=False)
+        print("#### Average generator loss : {} ####".format(total_loss))
 
         # TRAIN DISCRIMINATOR
-        adversarial_train(args, gen, dis, tokenizer_dis, dis_optimizer, dis_scheduler, real_train_dataset, 1)
+        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_dis, dis_optimizer, dis_scheduler, real_train_dataset, 1)
+        print("#### Average disriminator loss : {} ####".format(total_loss))
 
         # Add saving model config and test it
