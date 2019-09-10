@@ -102,12 +102,35 @@ class PretrainedTransformerGenerator(nn.Module):
         return list_of_samples
 
     def sample_text(self, num_samples: int):
-        outputs = self.sample(num_samples)
-        final_outputs = []
-        for sample in outputs:
-            decoded_sample = self.tokenizer.decode(sample, clean_up_tokenization_spaces=True)
-            final_outputs.append(decoded_sample)
-        return final_outputs
+         if self.args.length < 0 and self.config.max_position_embeddings > 0:
+            self.length = self.config.max_position_embeddings
+        elif 0 < self.config.max_position_embeddings < self.args.length:
+            self.args.length = self.config.max_position_embeddings  # No generation bigger than model size 
+        elif self.args.length < 0:
+            self.args.length = MAX_LENGTH  # avoid infinite loop
+
+        raw_text = "what"
+        if self.args.gen_model_type in ["transfo-xl", "xlnet"]:
+            # Models with memory likes to have a long prompt for short inputs.
+            raw_text = (self.args.padding_text if self.args.padding_text else PADDING_TEXT) + raw_text
+
+        list_of_samples = []
+        for sample_num in range(num_samples):
+            context_tokens = self.tokenizer.encode(raw_text)
+            out = self.sample_sequence(
+                model=self.model,
+                context=context_tokens,
+                length=self.args.length,
+                temperature=self.args.temperature,
+                top_k=self.args.top_k,
+                top_p=self.args.top_p,
+                device=self.args.device,
+                is_xlnet=bool(self.args.gen_model_type == "xlnet"),
+            )
+            out = out[0, len(context_tokens):].tolist()
+            sequence = self.tokenizer.decode(out, clean_up_tokenization_spaces=True)
+            list_of_samples.append(sequence)
+        return list_of_samples
 
     def forward(self, inputs, **kwargs):
         return self.model(inputs, **kwargs)
