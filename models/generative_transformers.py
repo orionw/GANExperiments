@@ -102,7 +102,7 @@ class PretrainedTransformerGenerator(nn.Module):
         return list_of_samples
 
     def sample_text(self, num_samples: int):
-         if self.args.length < 0 and self.config.max_position_embeddings > 0:
+        if self.args.length < 0 and self.config.max_position_embeddings > 0:
             self.length = self.config.max_position_embeddings
         elif 0 < self.config.max_position_embeddings < self.args.length:
             self.args.length = self.config.max_position_embeddings  # No generation bigger than model size 
