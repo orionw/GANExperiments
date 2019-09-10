@@ -115,8 +115,10 @@ class PretrainedTransformerGenerator(nn.Module):
             raw_text = (self.args.padding_text if self.args.padding_text else PADDING_TEXT) + raw_text
 
         list_of_samples = []
+        context_tokens = self.tokenizer.encode(raw_text)
         for sample_num in range(num_samples):
-            context_tokens = self.tokenizer.encode(raw_text)
+            if sample_num % 100 == 0:
+                print("On sample number {}".format(sample_num))
             out = self.sample_sequence(
                 model=self.model,
                 context=context_tokens,
@@ -127,7 +129,7 @@ class PretrainedTransformerGenerator(nn.Module):
                 device=self.args.device,
                 is_xlnet=bool(self.args.gen_model_type == "xlnet"),
             )
-            out = out[0, len(context_tokens):].tolist()
+            out = out[0, len(context_tokens):].cpu().tolist()
             sequence = self.tokenizer.decode(out, clean_up_tokenization_spaces=True)
             list_of_samples.append(sequence)
         return list_of_samples
