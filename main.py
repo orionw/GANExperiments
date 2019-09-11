@@ -36,6 +36,8 @@ from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
 
 from models.training_functions import (train_generator_mle, prepare_opt_and_scheduler, discriminator_eval)
+
+import wandb
  
 logger = logging.getLogger(__name__)
 
@@ -43,12 +45,14 @@ MLE_TRAIN_EPOCHS = 100
 ADV_TRAIN_EPOCHS = 50
 
 
-def adversarial_train(args, gen, dis, tokenizer, optimizer, scheduler, real_dataset, num_steps, is_discriminator = True):
+def adversarial_train(args, gen, dis, tokenizer, optimizer, real_dataset, num_steps, is_discriminator = True):
+    set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     total_loss = 0
     logger.info("Generating {} samples...".format(len(real_dataset)))
-    generated_samples = gen.sample_text(200)
+    generated_samples = gen.sample_text(len(real_dataset))
     generated_dataset = DiscriminatorDatasetFromList(generated_samples, label="0")
     if not is_discriminator:
+        wandb.log({"examples": wandb.Table(data=generated_samples[:10], columns=["Generated Sequences"])})
         print("\n\n The generated samples are: ", generated_samples[:10], "\n\n")
     # create real and generated dataloaders TODO: turn off evaluate=True after debugging is done
     generated_dataset = load_and_cache_examples(args, "cola", tokenizer, generated_dataset, evaluate=True, no_cache=True)
@@ -72,7 +76,6 @@ def adversarial_train(args, gen, dis, tokenizer, optimizer, scheduler, real_data
        dis  = torch.nn.DataParallel(dis)
        gen = torch.nn.DataParallel(gen)
 
-    import pdb; pdb.set_trace()
     # Distributed training (should be after apex fp16 initialization)
     if args.local_rank != -1:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
@@ -88,13 +91,14 @@ def adversarial_train(args, gen, dis, tokenizer, optimizer, scheduler, real_data
     logger.info("  Total optimization steps = %d", t_total)
 
 
-    dis.zero_grad()
     preds = None
     train_iterator = trange(int(1), desc="Epoch", disable=args.local_rank not in [-1, 0])
-    set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     for _ in train_iterator:
         epoch_iterator = tqdm(training_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, (real_batch, gen_batch) in enumerate(epoch_iterator):
+            dis.train()
+            gen.train()
+            optimizer.zero_grad()
             # run both real and fake data
             d_out_real = discriminator_eval(args, real_batch, dis, tokenizer)
             d_out_fake = discriminator_eval(args, gen_batch, dis, tokenizer)
@@ -115,15 +119,14 @@ def adversarial_train(args, gen, dis, tokenizer, optimizer, scheduler, real_data
 def optimize(opt, loss, model=None, retain_graph=False):
     opt.zero_grad()
     loss.backward(retain_graph=retain_graph)
-    # if model is not None: # TODO: add clip norm
-    #     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_norm)
+    if model is not None: 
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0) # 5 is from RelGan imp.
     opt.step()
 
 
 if __name__ == '__main__':
     global args  # for convenience,  I know it's a bad idea
     args = utils.argparser.parse_all_args(sys.argv)
-
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
         raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
 
@@ -136,6 +139,7 @@ if __name__ == '__main__':
         device = torch.device("cuda", args.local_rank)
         torch.distributed.init_process_group(backend='nccl')
         args.n_gpu = 1
+        
     args.device = device
 
      # Setup logging
@@ -149,9 +153,11 @@ if __name__ == '__main__':
     helpers.set_seed(args)
 
     logger.info("Training/evaluation parameters %s", args)
+    wandb.init(project="humorgan", config=args)
     # get models
     gen = generator.Generator(args)
     dis = discriminator.Discriminator(args)
+    wandb.watch((gen, dis))
     gen.to(args.device)
     dis.to(args.device)
 
@@ -166,30 +172,31 @@ if __name__ == '__main__':
     real_val_dataset = load_and_cache_examples(args, "cola", tokenizer_dis, loaded_train_dataset, evaluate=True)
 
     # prepare optimizers and schedulers
-    gen, gen_optimizer, gen_scheduler = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
-    dis, dis_optimizer, dis_scheduler = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
+    gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
+    dis, dis_optimizer = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
     if args.mle_pretraining:
-        _, gen_mle_optimizer, gen_mle_scheduler = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
+        _, gen_mle_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
 
-    logger.info('### Starting Generator MLE Training... ###')
     if args.mle_pretraining:
+        logger.info('### Starting Generator MLE Training... ###')
         train_dataset = load_and_cache_examples_generator(args, tokenizer_gen, evaluate=False)
         eval_dataset = load_and_cache_examples_generator(args, tokenizer_gen, evaluate=True)
-        train_generator_mle(args, train_dataset, gen, tokenizer_gen, gen_mle_optimizer, gen_mle_scheduler, eval_dataset)
+        train_generator_mle(args, train_dataset, gen, tokenizer_gen, gen_mle_optimizer, eval_dataset)
 
     # TODO: add loading model config and test it
-
     # ADVERSARIAL TRAINING
     for epoch in range(ADV_TRAIN_EPOCHS):
         
         logger.info('### GAN EPOCH: {} ###'.format(epoch))
         # TRAIN GENERATOR
-        loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_gen, gen_optimizer, gen_scheduler, 
+        loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_gen, gen_optimizer, 
                                                             real_train_dataset, 1, is_discriminator=False)
         print("#### Average generator loss : {} ####".format(loss))
+        wandb.log({"generator loss": loss})
 
         # TRAIN DISCRIMINATOR
-        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_dis, dis_optimizer, dis_scheduler, real_train_dataset, 1)
+        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_dis, dis_optimizer, real_train_dataset, 1)
         print("#### Average disriminator loss : {} ####".format(loss))
+        wandb.log({"discriminator loss": loss})
 
         # Add saving model config and test it

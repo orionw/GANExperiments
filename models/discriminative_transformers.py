@@ -62,7 +62,7 @@ class PretrainedDiscriminativeTransformer(nn.Module):
             torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
     def forward(self, **kwargs):
-        return self.model.forward(**kwargs)
+        return self.model(**kwargs)
 
 
 

@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 def discriminator_eval(args, batch, model, tokenizer, prefix=""):
-    model.train()
     batch = tuple(t.to(args.device) for t in batch)
     inputs =  { 'input_ids':      batch[0],
                 'attention_mask': batch[1],
@@ -65,7 +64,7 @@ def mask_tokens(inputs, tokenizer, args):
     return inputs, labels
 
 
-def train_generator_mle(args, train_dataset, model, tokenizer, optimizer, scheduler, eval_dataset):
+def train_generator_mle(args, train_dataset, model, tokenizer, optimizer, eval_dataset):
     """ Train the model """
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter()
@@ -134,7 +133,6 @@ def train_generator_mle(args, train_dataset, model, tokenizer, optimizer, schedu
                 else:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
-                scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
 
@@ -144,8 +142,6 @@ def train_generator_mle(args, train_dataset, model, tokenizer, optimizer, schedu
                         results = evaluate(args, model, tokenizer)
                         for key, value in results.items():
                             tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
-                    tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar('loss', (tr_loss - logging_loss)/args.logging_steps, global_step)
                     logging_loss = tr_loss
 
                 if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
@@ -230,11 +226,11 @@ def prepare_opt_and_scheduler(args, model, data_len):
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-    scheduler = WarmupLinearSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
+    # scheduler = WarmupLinearSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
     if args.fp16:
         try:
             from apex import amp
         except ImportError:
             raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
         model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
-    return model, optimizer, scheduler
+    return model, optimizer #, scheduler

@@ -134,6 +134,7 @@ def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False, n
         str(int(no_cache))))
     if os.path.exists(cached_features_file) and not no_cache:
         # only cache non-generative samples
+        assert no_cache == False, "No cache was set and we tried to read the cache"
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
     else:

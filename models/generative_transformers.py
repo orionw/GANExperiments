@@ -142,8 +142,9 @@ class PretrainedTransformerGenerator(nn.Module):
         context = context.unsqueeze(0).repeat(num_samples, 1)
         generated = context
         with torch.no_grad():
-            for _ in trange(length):
-
+            model.train()
+            for _ in range(length):
+                
                 inputs = {'input_ids': generated}
                 if is_xlnet: 
                     # XLNet is a direct (predict same token, not next token) and bi-directional model by default
@@ -157,8 +158,10 @@ class PretrainedTransformerGenerator(nn.Module):
 
                 outputs = model(**inputs)  # Note: we could also use 'past' with GPT-2/Transfo-XL/XLNet (cached hidden-states)
                 next_token_logits = outputs[0][0, -1, :] / temperature
-                filtered_logits = self.top_k_top_p_filtering(next_token_logits, top_k=top_k, top_p=top_p)
-                next_token = torch.multinomial(F.softmax(filtered_logits, dim=-1), num_samples=num_samples)
+                # only filter for eval # TODO
+                # filtered_logits = self.top_k_top_p_filtering(next_token_logits, top_k=top_k, top_p=top_p)
+                # add gumbel softmax 
+                next_token = torch.multinomial(F.softmax(self.add_gumbel(next_token_logits), dim=-1), num_samples=num_samples)
                 generated = torch.cat((generated, next_token.unsqueeze(0)), dim=1)
         return generated
 
@@ -197,7 +200,17 @@ class PretrainedTransformerGenerator(nn.Module):
         torch.manual_seed(seed)
         if n_gpu > 0:
             torch.cuda.manual_seed_all(seed)
-    
+
+    @staticmethod
+    def add_gumbel(o_t, eps=1e-10, gpu=True):
+        """Add o_t by a vector sampled from Gumbel(0,1)"""
+        u = torch.rand(o_t.size())
+        if gpu:
+            u = u.cuda()
+        g_t = -torch.log(-torch.log(u + eps) + eps)
+        gumbel_t = o_t + g_t
+        return gumbel_t
+
     # def sample(self, num_samples: int = 1):
     #     if self.args.length < 0 and self.config.max_position_embeddings > 0:
     #         self.length = self.config.max_position_embeddings

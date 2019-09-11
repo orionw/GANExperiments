@@ -164,7 +164,6 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
     """
 
     label_map = {label : i for i, label in enumerate(label_list)}
-
     features = []
     for (ex_index, example) in enumerate(examples):
         if ex_index % 10000 == 0:
@@ -253,15 +252,15 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
             import pdb; pdb.set_trace()
             raise KeyError(output_mode)
 
-        if ex_index < 5:
+        if ex_index < 2:
             logger.info("*** Example ***")
             logger.info("guid: %s" % (example.guid))
             logger.info("tokens: %s" % " ".join(
                     [str(x) for x in tokens]))
-            logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-            logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
-            logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-            logger.info("label: %s (id = %d)" % (example.label, label_id))
+            # logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+            # logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
+            # logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+            # logger.info("label: %s (id = %d)" % (example.label, label_id))
 
         features.append(
                 InputFeatures(input_ids=input_ids,

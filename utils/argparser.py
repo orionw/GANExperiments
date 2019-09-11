@@ -81,7 +81,7 @@ def parse_all_args(arglist):
                     help="Batch size per GPU/CPU for evaluation.")
      parser.add_argument('--gradient_accumulation_steps', type=int, default=4,
                     help="Number of updates steps to accumulate before performing a backward/update pass.")
-     parser.add_argument("--learning_rate", default=5e-5, type=float,
+     parser.add_argument("--learning_rate", default=1e-5, type=float,
                     help="The initial learning rate for Adam.")
      parser.add_argument("--weight_decay", default=0.0, type=float,
                     help="Weight deay if we apply some.")
