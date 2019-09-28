@@ -2,3 +2,7 @@
 .idea*
 .vscode*
 env/*
+wandb/*
+runs/*
+gan_results/*
+data/*/*cached*

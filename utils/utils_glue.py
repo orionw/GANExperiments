@@ -162,7 +162,6 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
             - True (XLNet/GPT pattern): A + [SEP] + B + [SEP] + [CLS]
         `cls_token_segment_id` define the segment id associated to the CLS token (0 for BERT, 2 for XLNet)
     """
-
     label_map = {label : i for i, label in enumerate(label_list)}
     features = []
     for (ex_index, example) in enumerate(examples):
@@ -170,6 +169,8 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
             logger.info("Writing example %d of %d" % (ex_index, len(examples)))
 
         tokens_a = tokenizer.tokenize(example.text_a)
+        # import pdb; pdb.set_trace()
+        # print(tokens_a, example.text_a)
 
         tokens_b = None
         if example.text_b:
@@ -268,6 +269,8 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
                               segment_ids=segment_ids,
                               label_id=label_id))
     return features
+
+
 
 
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):

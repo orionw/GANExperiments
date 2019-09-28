@@ -15,6 +15,7 @@ from torch.utils.data import Dataset, DataLoader
 
 import models.generator as generator
 import models.discriminator as discriminator
+from models.xlnet import XLNetEmbedder
 import utils.helpers as helpers
 from utils.load_data import (get_dataloaders, DiscriminatorDatasetFromFile, DiscriminatorDatasetFromList, DualDataset,
                                 load_and_cache_examples_generator, TextDataset, load_and_cache_examples)
@@ -41,29 +42,20 @@ import wandb
  
 logger = logging.getLogger(__name__)
 
-MLE_TRAIN_EPOCHS = 100
 ADV_TRAIN_EPOCHS = 50
 
 
 def adversarial_train(args, gen, dis, tokenizer, optimizer, real_dataset, num_steps, is_discriminator = True):
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     total_loss = 0
-    logger.info("Generating {} samples...".format(len(real_dataset)))
-    generated_samples = gen.sample_text(len(real_dataset))
-    generated_dataset = DiscriminatorDatasetFromList(generated_samples, label="0")
-    if not is_discriminator:
-        wandb.log({"examples": wandb.Table(data=generated_samples[:10], columns=["Generated Sequences"])})
-        print("\n\n The generated samples are: ", generated_samples[:10], "\n\n")
+    
     # create real and generated dataloaders TODO: turn off evaluate=True after debugging is done
-    generated_dataset = load_and_cache_examples(args, "cola", tokenizer, generated_dataset, evaluate=True, no_cache=True)
-
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter()
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    train_dataset = DualDataset(real_dataset, generated_dataset)
-    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
-    training_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+    train_sampler = RandomSampler(real_dataset) if args.local_rank == -1 else DistributedSampler(real_dataset)
+    training_dataloader = DataLoader(real_dataset, sampler=train_sampler, batch_size=args.train_batch_size, drop_last=True)
 
     if args.max_steps > 0:
         t_total = args.max_steps
@@ -95,10 +87,11 @@ def adversarial_train(args, gen, dis, tokenizer, optimizer, real_dataset, num_st
     train_iterator = trange(int(1), desc="Epoch", disable=args.local_rank not in [-1, 0])
     for _ in train_iterator:
         epoch_iterator = tqdm(training_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
-        for step, (real_batch, gen_batch) in enumerate(epoch_iterator):
+        for step, (real_batch) in enumerate(epoch_iterator):
             dis.train()
             gen.train()
-            optimizer.zero_grad()
+            gen_batch = gen.sample(args.train_batch_size)
+            import pdb; pdb.set_trace()
             # run both real and fake data
             d_out_real = discriminator_eval(args, real_batch, dis, tokenizer)
             d_out_fake = discriminator_eval(args, gen_batch, dis, tokenizer)
@@ -120,7 +113,7 @@ def optimize(opt, loss, model=None, retain_graph=False):
     opt.zero_grad()
     loss.backward(retain_graph=retain_graph)
     if model is not None: 
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0) # 5 is from RelGan imp.
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0) # 5 is from RelGan paper/impl.
     opt.step()
 
 
@@ -155,21 +148,20 @@ if __name__ == '__main__':
     logger.info("Training/evaluation parameters %s", args)
     wandb.init(project="humorgan", config=args)
     # get models
-    gen = generator.Generator(args)
     dis = discriminator.Discriminator(args)
+    tokenizer = dis.tokenizer
+    gen = generator.Generator(args, dis.tokenizer)
     wandb.watch((gen, dis))
     gen.to(args.device)
     dis.to(args.device)
 
     # assign tokenizers
-    tokenizer_gen = gen.tokenizer
-    tokenizer_dis = dis.tokenizer
 
     # prepare main dataset
     loaded_val_dataset = DiscriminatorDatasetFromFile(args.eval_data_file, label="1")
     loaded_train_dataset = DiscriminatorDatasetFromFile(args.train_data_file, label="1")
-    real_train_dataset = load_and_cache_examples(args, "cola", tokenizer_dis, loaded_train_dataset, evaluate=True)
-    real_val_dataset = load_and_cache_examples(args, "cola", tokenizer_dis, loaded_train_dataset, evaluate=True)
+    real_train_dataset = load_and_cache_examples(args, "cola", tokenizer, loaded_train_dataset, evaluate=True)
+    real_val_dataset = load_and_cache_examples(args, "cola", tokenizer, loaded_train_dataset, evaluate=True)
 
     # prepare optimizers and schedulers
     gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
@@ -179,24 +171,30 @@ if __name__ == '__main__':
 
     if args.mle_pretraining:
         logger.info('### Starting Generator MLE Training... ###')
-        train_dataset = load_and_cache_examples_generator(args, tokenizer_gen, evaluate=False)
-        eval_dataset = load_and_cache_examples_generator(args, tokenizer_gen, evaluate=True)
-        train_generator_mle(args, train_dataset, gen, tokenizer_gen, gen_mle_optimizer, eval_dataset)
+        train_dataset = load_and_cache_examples_generator(args, tokenizer, evaluate=False)
+        eval_dataset = load_and_cache_examples_generator(args, tokenizer, evaluate=True)
+        train_generator_mle(args, train_dataset, gen, tokenizer, gen_mle_optimizer, eval_dataset)
 
     # TODO: add loading model config and test it
     # ADVERSARIAL TRAINING
     for epoch in range(ADV_TRAIN_EPOCHS):
-        
         logger.info('### GAN EPOCH: {} ###'.format(epoch))
-        # TRAIN GENERATOR
-        loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_gen, gen_optimizer, 
-                                                            real_train_dataset, 1, is_discriminator=False)
-        print("#### Average generator loss : {} ####".format(loss))
-        wandb.log({"generator loss": loss})
 
         # TRAIN DISCRIMINATOR
-        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer_dis, dis_optimizer, real_train_dataset, 1)
+        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer, dis_optimizer, real_train_dataset, 1)
         print("#### Average disriminator loss : {} ####".format(loss))
         wandb.log({"discriminator loss": loss})
+        
+        # TRAIN GENERATOR
+        for gen_steps in range(3):
+            loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer, gen_optimizer, 
+                                                                real_train_dataset, 1, is_discriminator=False)
+            print("#### Average generator loss : {} ####".format(loss))
+            wandb.log({"generator loss": loss})
+
+        set_seed(args)
+        generated_samples = gen.sample_text(10)
+        wandb.log({"examples": wandb.Table(data=generated_samples, columns=["Generated Sequences"])})
+        print("\n\n The generated samples are: ", generated_samples, "\n\n")
 
         # Add saving model config and test it

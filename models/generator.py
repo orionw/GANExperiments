@@ -12,7 +12,7 @@ from models.generative_transformers import PretrainedTransformerGenerator
 
 class Generator(nn.Module):
 
-    def __init__(self, args):
+    def __init__(self, args, tokenizer):
         super(Generator, self).__init__()
         # self.hidden_dim = hidden_dim
         # self.embedding_dim = embedding_dim
@@ -20,7 +20,7 @@ class Generator(nn.Module):
         self.gpu = args.no_cuda is False
 
         # getting a model should also return a tokenizer for that model
-        self.model = PretrainedTransformerGenerator(args)
+        self.model = PretrainedTransformerGenerator(args, tokenizer)
         self.tokenizer = self.model.tokenizer
 
     def init_hidden(self, batch_size=1):
