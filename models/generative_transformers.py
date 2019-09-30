@@ -22,6 +22,8 @@ from utils.helpers import set_seed
 
 from metrics.loss import gumbel_softmax
 
+from models.xlnet import XLNetEmbedder, 
+
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
                     level = logging.INFO)

@@ -21,21 +21,13 @@ class Generator(nn.Module):
 
         # getting a model should also return a tokenizer for that model
         self.model = PretrainedTransformerGenerator(args, tokenizer)
-        self.tokenizer = self.model.tokenizer
-
-    def init_hidden(self, batch_size=1):
-        h = autograd.Variable(torch.zeros(1, batch_size, self.hidden_dim))
-
-        if self.gpu:
-            return h.cuda()
-        else:
-            return h
+        self.tokenizer = tokenizer
 
     def forward(self, inputs, **kwargs):
         """
         Embeds input and applies GRU one token at a time (seq_len = 1)
         """
-        return self.model.forward(inputs, **kwargs)
+        return self.model.encode(inputs, **kwargs)
 
     def sample(self, num_samples):
         """

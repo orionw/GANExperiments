@@ -37,8 +37,6 @@ from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
 
 from models.training_functions import (train_generator_mle, prepare_opt_and_scheduler, discriminator_eval)
-
-import wandb
  
 logger = logging.getLogger(__name__)
 
@@ -118,7 +116,6 @@ def optimize(opt, loss, model=None, retain_graph=False):
 
 
 if __name__ == '__main__':
-    global args  # for convenience,  I know it's a bad idea
     args = utils.argparser.parse_all_args(sys.argv)
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
         raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
@@ -146,16 +143,15 @@ if __name__ == '__main__':
     helpers.set_seed(args)
 
     logger.info("Training/evaluation parameters %s", args)
-    wandb.init(project="humorgan", config=args)
     # get models
     dis = discriminator.Discriminator(args)
     tokenizer = dis.tokenizer
     gen = generator.Generator(args, dis.tokenizer)
-    wandb.watch((gen, dis))
+    if args.record_run:
+        wandb.init(project="humorgan", config=args)
+        wandb.watch((gen, dis))
     gen.to(args.device)
     dis.to(args.device)
-
-    # assign tokenizers
 
     # prepare main dataset
     loaded_val_dataset = DiscriminatorDatasetFromFile(args.eval_data_file, label="1")
@@ -166,6 +162,13 @@ if __name__ == '__main__':
     # prepare optimizers and schedulers
     gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
     dis, dis_optimizer = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
+
+    decoder = GRUDecoder(768, tokenizer.vocab_size, 768, 4, .2)
+    autoencoder = Autoencoder(gen, decoder, args.device).to(args.device)
+
+    # TOOD: create autoencoder training
+    # output = autoencoder(self.input, self.input)
+
     if args.mle_pretraining:
         _, gen_mle_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
 
@@ -193,8 +196,9 @@ if __name__ == '__main__':
             wandb.log({"generator loss": loss})
 
         set_seed(args)
-        generated_samples = gen.sample_text(10)
-        wandb.log({"examples": wandb.Table(data=generated_samples, columns=["Generated Sequences"])})
-        print("\n\n The generated samples are: ", generated_samples, "\n\n")
+        if epoch % 2 == 0:
+            generated_samples = decoder.decode(gen.sample(10))
+            wandb.log({"examples": wandb.Table(data=generated_samples, columns=["Generated Sequences"])})
+            print("\n\n The generated samples are: ", generated_samples, "\n\n")
 
         # Add saving model config and test it

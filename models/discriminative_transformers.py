@@ -28,6 +28,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
+from models.xlnet import XLNetForSequenceClassificationGivenEmbedding
 from utils.helpers import set_seed
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (
 
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
-    'xlnet': (XLNetConfig, XLNetForSequenceClassification, XLNetTokenizer),
+    'xlnet': (XLNetConfig, XLNetForSequenceClassificationGivenEmbedding, XLNetTokenizer),
     'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
 }

@@ -130,6 +130,7 @@ def parse_all_args(arglist):
      parser.add_argument("--top_k", type=int, default=0)
      parser.add_argument("--top_p", type=float, default=0.9)
      parser.add_argument("--n_gpu", type=int, default=1)
+     parser.add_argument("--record_run", action="store_true", default=False)
      args = parser.parse_args()
 
      return args

@@ -86,7 +86,7 @@ class XLNetEmbedder(XLNetPreTrainedModel):
 
         self.transformer = XLNetModel(config)
         self.lm_loss = nn.Linear(config.d_model, config.n_token, bias=True)
-        self.init_weights(self.modules)
+        self.init_weights()
         self.tie_weights()
 
     def tie_weights(self):
@@ -176,20 +176,12 @@ class XLNetForSequenceClassificationGivenEmbedding(XLNetPreTrainedModel):
         self.transformer = XLNetModelWithoutEmbedding(config)
         self.sequence_summary = SequenceSummary(config)
         self.logits_proj = nn.Linear(config.d_model, config.num_labels)
-        self.init_weights(self.modules)
+        self.init_weights()
 
     def forward(self, given_embedding, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
                 token_type_ids=None, input_mask=None, head_mask=None, labels=None):
-        transformer_outputs = self.transformer(given_embedding,
-                                               attention_mask=attention_mask,
-                                               mems=mems,
-                                               perm_mask=perm_mask,
-                                               target_mapping=target_mapping,
-                                               token_type_ids=token_type_ids,
-                                               input_mask=input_mask, 
-                                               head_mask=head_mask)
+        transformer_outputs = self.transformer(given_embedding, mems=mems)
         output = transformer_outputs[0]
-
         output = self.sequence_summary(output)
         logits = self.logits_proj(output)
 
@@ -204,6 +196,7 @@ class XLNetForSequenceClassificationGivenEmbedding(XLNetPreTrainedModel):
                 loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
+        return outputs
 
 class XLNetModelWithoutEmbedding(XLNetModel):
     """
@@ -213,8 +206,7 @@ class XLNetModelWithoutEmbedding(XLNetModel):
     def __init__(self, config):
         super(XLNetModelWithoutEmbedding, self).__init__(config)
 
-    def forward(self, given_embedding, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
-                token_type_ids=None, input_mask=None, head_mask=None):
+    def forward(self, given_embedding, mems=None):
 
         ##### Word embeddings and prepare h & g hidden states
         word_emb_k = given_embedding
@@ -226,17 +218,16 @@ class XLNetModelWithoutEmbedding(XLNetModel):
         seg_mat = None
         output_g = None
         non_tgt_mask = None
-        qlen = 20
+        qlen, bsz = given_embedding.shape[0], given_embedding.shape[1]
         mlen = mems[0].shape[0] if mems is not None and mems[0] is not None else 0
         klen = mlen + qlen
         ##### Positional encoding
-        pos_emb = self.relative_positional_encoding(qlen, klen, bsz=20)
+        pos_emb = self.relative_positional_encoding(qlen, klen, bsz=bsz)
         pos_emb = self.dropout(pos_emb)
 
         new_mems = ()
         if mems is None:
             mems = [None] * len(self.layer)
-
         attentions = []
         hidden_states = []
         for i, layer_module in enumerate(self.layer):
@@ -245,9 +236,8 @@ class XLNetModelWithoutEmbedding(XLNetModel):
             if self.output_hidden_states:
                 hidden_states.append((output_h, output_g) if output_g is not None else output_h)
 
-            outputs = layer_module(output_h, output_g, attn_mask_h=non_tgt_mask, attn_mask_g=attn_mask,
-                                   r=pos_emb, seg_mat=seg_mat, mems=mems[i], target_mapping=target_mapping,
-                                   head_mask=head_mask[i])
+            outputs = layer_module(output_h, None, attn_mask_h=None, attn_mask_g=None, r=pos_emb,
+                                     seg_mat=None, mems=mems[i], target_mapping=None, head_mask=head_mask[i])
             output_h, output_g = outputs[:2]
             if self.output_attentions:
                 attentions.append(outputs[2])

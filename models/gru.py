@@ -44,3 +44,21 @@ class GRUModelGenerator(nn.Module):
             inp = out.view(-1)
 
         return samples
+
+
+class GRUDecoder(nn.Module):
+    def __init__(self, emb_dim, vocab_size, hid_dim, n_layers, dropout):
+        super().__init__()
+
+        self.emb_dim = emb_dim  # should be 1 if we don't embed
+        self.vocab_size = vocab_size
+        self.embed = nn.Embedding(self.vocab_size, self.emb_dim)  # we used GLove 100-dim
+        self.hid_dim = hid_dim
+        self.n_layers = n_layers  # should be 1
+        self.rnn = nn.GRU(emb_dim, hid_dim, n_layers, dropout=dropout)
+        self.out = nn.Linear(self.hid_dim, self.vocab_size)
+
+    def forward(self, last_word, last_hidden):
+        output, new_hidden = self.rnn(last_word.float(), last_hidden.float())
+        prediction = self.out(output.squeeze(0))
+        return prediction, new_hidden
