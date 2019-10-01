@@ -179,7 +179,7 @@ if __name__ == '__main__':
     autoencoder_optimizer = optim.Adam(autoencoder.parameters(), lr=3e-4)
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     loss_df = pd.DataFrame(columns=['batch_num', 'loss'])
-    train_autoencoder(args, autoencoder, val_dataloader, val_dataloader, autoencoder_optimizer, 
+    autoencoder = train_autoencoder(args, autoencoder, val_dataloader, val_dataloader, autoencoder_optimizer, 
                       criterion, 1, loss_df, args.autoencoder_epochs)
 
     if args.mle_pretraining:

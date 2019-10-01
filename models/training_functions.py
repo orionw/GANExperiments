@@ -13,6 +13,7 @@ import torch
 from torch.nn.functional import one_hot
 import torch.nn.functional as F
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
@@ -256,8 +257,8 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step()
-            loss_list.append({'batch_num': model.number_of_batches_seen, 'loss': float(loss.data)})
-            loop.set_description('epoch:{}. loss:{:.4f}'.format(epoch, float(loss.data)))
+            loss_list.append({'batch_num': model.number_of_batches_seen, 'loss': float(loss.item())})
+            loop.set_description('epoch:{}. loss:{:.4f}'.format(epoch, float(loss.item())))
             loop.update(1)
 
             if model.number_of_batches_seen % 500 == 0:
@@ -271,8 +272,12 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
                     wandb.log({"autoencoder_samples": wandb.Table(data=sample_str, columns=["Autoencoder Samples"])})
 
             # save losses
-            if model.number_of_batches_seen % 100 == 0:
+            if model.number_of_batches_seen % 5 == 0:
                 loss_df = loss_df.append(pd.DataFrame(loss_list), ignore_index=True)
                 loss_list = []
-    
-    return model, loss_df
+
+    if True or args.record_run:
+        fig = loss_df.plot(x="batch_num", y="loss")
+        plt.savefig(os.path.join(args.output_dir, "loss.png"))
+
+    return model

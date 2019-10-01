@@ -1,0 +1,17 @@
+  
+language: python
+sudo: true
+python:
+  - "3.6"
+
+install:
+  - CODECOV_TOKEN=""
+  - pip install -r requirements.txt > /dev/null
+  - pip install codecov
+  - pip install coverage
+
+script:
+  - coverage run run_tests.py
+
+after_success:
+  - codecov --token=$CODECOV_TOKEN
