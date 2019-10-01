@@ -33,7 +33,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
-from utils.helpers import set_seed
+from models.training_functions import set_seed
 from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
 
@@ -281,3 +281,11 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
         plt.savefig(os.path.join(args.output_dir, "loss.png"))
 
     return model
+
+
+def set_seed(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if args.n_gpu > 0:
+        torch.cuda.manual_seed_all(args.seed)

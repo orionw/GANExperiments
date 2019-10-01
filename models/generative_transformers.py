@@ -18,7 +18,7 @@ from pytorch_transformers import TransfoXLLMHeadModel, TransfoXLTokenizer
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
         TensorDataset)
 
-from utils.helpers import set_seed
+from models.training_functions import set_seed
 
 from metrics.loss import gumbel_softmax
 

@@ -15,17 +15,6 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
 logger = logging.getLogger(__name__)
 
 
-def get_dataloaders(root_path: str, header: bool = None, batch_size: int = 48, device: str = "0",
-                    shuffle=True, n_workers=1):
-    """
-    A function to return PyTorch dataloaders for a given csv file(s).
-    :param root_path: the path where the dataset lives
-    :param header: whether or not to return a header
-    """
-    dataset = GenerationDataset(root_path, header=header)
-    dataloader = DataLoader(dataset, batch_size=batch_size, pin_memory=True, shuffle=shuffle, num_workers=n_workers)
-    return dataloader
-
 
 class DiscriminatorDatasetFromFile(Dataset):
     """
@@ -41,39 +30,6 @@ class DiscriminatorDatasetFromFile(Dataset):
     def __getitem__(self, index):
         # grab the line needed
         return self.data.iloc[index, 0], self.label
-
-
-class DiscriminatorDatasetFromList(Dataset):
-    """
-    A class to hold natural language text only, no label, made from a list object
-    """
-    def __init__(self, text_list: list, label = "0"):
-        self.data = text_list
-        self.label = label
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, index):
-        # grab the line needed
-        return self.data[index], self.label
-
-
-class DualDataset(Dataset):
-    """
-    A class to hold natural language text only, no label, made from a list object
-    """
-    def __init__(self, dataset1, dataset2):
-        self.d1 = dataset1
-        self.d2 = dataset2
-
-    def __len__(self):
-        # only cycle through equal lengths
-        return min(len(self.d1), len(self.d2))
-
-    def __getitem__(self, index):
-        # return both datasets at the same time
-        return self.d1[index], self.d2[index]
 
 
 class TextDataset(Dataset):

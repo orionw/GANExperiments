@@ -20,9 +20,7 @@ import models.discriminator as discriminator
 from models.xlnet import XLNetEmbedder
 from models.autoencoder import Autoencoder
 
-import utils.helpers as helpers
-from utils.load_data import (get_dataloaders, DiscriminatorDatasetFromFile, DiscriminatorDatasetFromList, DualDataset,
-                                load_and_cache_examples_generator, TextDataset, load_and_cache_examples)
+from utils.load_data import (DiscriminatorDatasetFromFile, load_and_cache_examples_generator, TextDataset, load_and_cache_examples)
 
 
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
@@ -35,7 +33,7 @@ import utils.argparser
 
 from metrics.loss import get_losses
 
-from utils.helpers import set_seed
+from models.training_functions import set_seed
 
 from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
@@ -143,7 +141,7 @@ if __name__ == '__main__':
                     args.local_rank, device, args.n_gpu, bool(args.local_rank != -1), args.fp16)
 
     # Set seed
-    helpers.set_seed(args)
+    set_seed(args)
 
     logger.info("Training/evaluation parameters %s", args)
     # get models

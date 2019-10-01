@@ -29,7 +29,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
 from models.xlnet import XLNetForSequenceClassificationGivenEmbedding
-from utils.helpers import set_seed
+from models.training_functions import set_seed
 
 logger = logging.getLogger(__name__)
 

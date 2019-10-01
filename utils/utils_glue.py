@@ -269,8 +269,6 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
     return features
 
 
-
-
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
     """Truncates a sequence pair in place to the maximum length."""
 
@@ -310,6 +308,7 @@ def compute_metrics(task_name, preds, labels):
         return {"nll": simple_accuracy(preds, labels)}
     else:
         raise KeyError(task_name)
+
 
 processors = {
     "gan": GANProcessor,

@@ -3,7 +3,6 @@ import json
 import os
 import logging
 import pandas as pd
-# from load_data import get_dataloaders
 import torch
 
 logging.basicConfig(level=logging.INFO)
