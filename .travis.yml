@@ -5,7 +5,7 @@ python:
   - "3.6"
 
 install:
-  - CODECOV_TOKEN=""
+  - CODECOV_TOKEN="c8b195be-5018-47ea-881a-4f507d9aa82d"
   - pip install -r requirements.txt > /dev/null
   - pip install codecov
   - pip install coverage
