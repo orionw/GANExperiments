@@ -169,7 +169,6 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
             logger.info("Writing example %d of %d" % (ex_index, len(examples)))
 
         tokens_a = tokenizer.tokenize(example.text_a)
-        # import pdb; pdb.set_trace()
         # print(tokens_a, example.text_a)
 
         tokens_b = None
@@ -250,7 +249,6 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
                 label_id = 0
         except Exception as e:
             print(label_map, example.label, e)
-            import pdb; pdb.set_trace()
             raise KeyError(output_mode)
 
         if ex_index < 2:

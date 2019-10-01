@@ -21,13 +21,20 @@ class TestAutoencoding(unittest.TestCase):
         self.input = torch.tensor(self.tokenizer.encode(self.source)).unsqueeze(0)  # Batch size 1
 
     def test_can_decode_basic(self):
-        embed_model = XLNetEmbedder.from_pretrained("xlnet-base-cased")
-        embed_outs = embed_model.encode(self.input)
-        last_embedding = embed_outs[0]
-    
-        gru_decoder = GRUDecoder(768, self.tokenizer.vocab_size, 768, 4,.2)
-        loss_df = pd.DataFrame(columns=['batch_num', 'loss'])
+        embed_model = XLNetEmbedder.from_pretrained("xlnet-base-cased")    
+        gru_decoder = GRUDecoder(768, self.tokenizer.vocab_size, 768, 1, .2)
+        autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
+        output = autoencoder(self.input, self.input)
 
+        criterion = nn.CrossEntropyLoss(ignore_index=0)
+        output = output.view(-1, output.shape[-1])
+        trg = self.input.view(-1)
+        loss = criterion(output, trg)
+        assert type(loss.item()) == float, "could not get loss value: type {}".format(type(loss.item()))
+
+    def test_can_decode_basic_more_layers(self):
+        embed_model = XLNetEmbedder.from_pretrained("xlnet-base-cased")    
+        gru_decoder = GRUDecoder(768, self.tokenizer.vocab_size, 768, 4, .2)
         autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
         output = autoencoder(self.input, self.input)
 
@@ -38,13 +45,8 @@ class TestAutoencoding(unittest.TestCase):
         assert type(loss.item()) == float, "could not get loss value: type {}".format(type(loss.item()))
 
     def test_decode_to_text(self):
-        embed_model = XLNetEmbedder.from_pretrained("xlnet-base-cased")
-        embed_outs = embed_model.encode(self.input)
-        last_embedding = embed_outs
-    
+        embed_model = XLNetEmbedder.from_pretrained("xlnet-base-cased")    
         gru_decoder = GRUDecoder(768, self.tokenizer.vocab_size, 768, 4,.2)
-        loss_df = pd.DataFrame(columns=['batch_num', 'loss'])
-
         autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
         output = autoencoder(self.input, self.input)
 

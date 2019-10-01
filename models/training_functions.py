@@ -5,9 +5,15 @@ import glob
 import logging
 import os
 import random
+import time
+
 
 import numpy as np
 import torch
+from torch.nn.functional import one_hot
+import torch.nn.functional as F
+import pandas as pd
+
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
@@ -236,36 +242,37 @@ def prepare_opt_and_scheduler(args, model, data_len):
     return model, optimizer #, scheduler
 
 
-def train_autoencoder(model, autoencoder_objects, optimizer, criterion, clip, loss_df, num_epochs):
+def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, criterion, clip, loss_df, num_epochs):
     loss_list = []
-    total_num_batches = len(autoencoder_objects['train_data']) * num_epochs / autoencoder_hyperparameters['batch_size']
-    while True:
-        if model.number_of_batches_seen > total_num_batches:
-            break
-        for i, batch in enumerate(autoencoder_objects['train_iterator']):
-            tick = time.time()
-            if model.number_of_batches_seen > total_num_batches:
-                break
-            src = batch.src
-            trg = batch.trg
+    for epoch in range(num_epochs):
+        loop = tqdm(total=len(train_dataloader), position=0, leave=True)
+        for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
-            output = model(src, trg)
-            output = output[1:].view(-1, output.shape[-1])
-            trg = trg[1:].view(-1)
-            loss = criterion(output, trg)
+            target = batch[0].cuda()
+            output = model(batch, target)
+            # reshape the objects so that we can get the loss
+            output = output.permute((1, 2, 0)).cuda()
+            loss = criterion(output, target)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step()
-
             loss_list.append({'batch_num': model.number_of_batches_seen, 'loss': float(loss.data)})
+            loop.set_description('epoch:{}. loss:{:.4f}'.format(epoch, float(loss.data)))
+            loop.update(1)
 
-            print(time.time() - tick)
+            if model.number_of_batches_seen % 500 == 0:
+                torch.save(model.state_dict(), os.path.join(args.output_dir, "autoencoder.pt"))
+                # see example of output to see how we're doing
+                output_text = model.convert_to_text(output[0])
+                input_text = model.convert_to_text(target[0], given_ids=True)
+                sample_str = "The autoencoder recieved {} \n but produced {} \n".format(input_text, output_text)
+                print(sample_str)
+                if args.record_run:
+                    wandb.log({"autoencoder_samples": wandb.Table(data=sample_str, columns=["Autoencoder Samples"])})
 
-            if model.number_of_batches_seen % 2000 == 0:
-                # save gru_decoder
-                torch.save(model, os.path.join(fixed_vars['autoencoder_directory'], "autoencoder.model"))
-                # save losses
+            # save losses
             if model.number_of_batches_seen % 100 == 0:
                 loss_df = loss_df.append(pd.DataFrame(loss_list), ignore_index=True)
                 loss_list = []
+    
     return model, loss_df

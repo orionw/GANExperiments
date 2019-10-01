@@ -22,7 +22,7 @@ from utils.helpers import set_seed
 
 from metrics.loss import gumbel_softmax
 
-from models.xlnet import XLNetEmbedder, 
+from models.xlnet import XLNetEmbedder
 
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
@@ -36,7 +36,7 @@ ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (
 MODEL_CLASSES = {
     'gpt2': (GPT2Config, GPT2LMHeadModel, GPT2Tokenizer),
     'openai-gpt': (OpenAIGPTConfig, OpenAIGPTLMHeadModel, OpenAIGPTTokenizer),
-    'xlnet': (XLNetConfig, XLNetLMHeadModel, XLNetTokenizer),
+    'xlnet': (XLNetConfig, XLNetEmbedder, XLNetTokenizer),
     'transfo-xl': (TransfoXLConfig, TransfoXLLMHeadModel, TransfoXLTokenizer),
 }
 
@@ -147,8 +147,9 @@ class PretrainedTransformerGenerator(nn.Module):
             list_of_samples.append(sequence)
         return list_of_samples
 
-    def forward(self, inputs, **kwargs):
-        return self.model(inputs, **kwargs)
+    # TODO: make this not two layers deep
+    def forward(self, **kwargs):
+        return self.model(**kwargs)
 
     def sample_sequence(self, length, model, context, num_samples=1, temperature=1, top_k=0, top_p=0.0, is_xlnet=False, device='cpu'):
         context = torch.tensor(context, dtype=torch.long, device=device)
@@ -177,8 +178,7 @@ class PretrainedTransformerGenerator(nn.Module):
                 # filtered_logits = self.top_k_top_p_filtering(next_token_logits, top_k=top_k, top_p=top_p)
                 # add gumbel softmax 
                 next_token = torch.argmax(F.softmax(self.add_gumbel(next_token_logits), dim=-1)).unsqueeze(0)
-                import pdb; pdb.set_trace()
-                generated = torch.cat((generated.float(), next_token.unsqueeze(0).float(), dim=1)
+                generated = torch.cat((generated.float(), next_token.unsqueeze(0).float()), dim=1)
 
             final_generated = generated if final_generated is None else torch.cat((final_generated, generated), dim=0)
         assert final_generated.requires_grad == True, "outputs do not require grad, error"

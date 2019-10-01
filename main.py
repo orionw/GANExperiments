@@ -6,6 +6,7 @@ import pdb
 import os
 import logging
 import pickle
+import pandas as pd
 
 from tqdm import tqdm
 import torch
@@ -13,9 +14,12 @@ import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
+from models.gru import GRUDecoder
 import models.generator as generator
 import models.discriminator as discriminator
 from models.xlnet import XLNetEmbedder
+from models.autoencoder import Autoencoder
+
 import utils.helpers as helpers
 from utils.load_data import (get_dataloaders, DiscriminatorDatasetFromFile, DiscriminatorDatasetFromList, DualDataset,
                                 load_and_cache_examples_generator, TextDataset, load_and_cache_examples)
@@ -36,7 +40,7 @@ from utils.helpers import set_seed
 from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
 
-from models.training_functions import (train_generator_mle, prepare_opt_and_scheduler, discriminator_eval)
+from models.training_functions import (train_generator_mle, prepare_opt_and_scheduler, discriminator_eval, train_autoencoder)
  
 logger = logging.getLogger(__name__)
 
@@ -89,7 +93,6 @@ def adversarial_train(args, gen, dis, tokenizer, optimizer, real_dataset, num_st
             dis.train()
             gen.train()
             gen_batch = gen.sample(args.train_batch_size)
-            import pdb; pdb.set_trace()
             # run both real and fake data
             d_out_real = discriminator_eval(args, real_batch, dis, tokenizer)
             d_out_fake = discriminator_eval(args, gen_batch, dis, tokenizer)
@@ -158,16 +161,26 @@ if __name__ == '__main__':
     loaded_train_dataset = DiscriminatorDatasetFromFile(args.train_data_file, label="1")
     real_train_dataset = load_and_cache_examples(args, "cola", tokenizer, loaded_train_dataset, evaluate=True)
     real_val_dataset = load_and_cache_examples(args, "cola", tokenizer, loaded_train_dataset, evaluate=True)
+    val_sampler = RandomSampler(real_val_dataset) if args.local_rank == -1 else DistributedSampler(real_val_dataset)
+    val_dataloader = DataLoader(real_val_dataset, sampler=val_sampler, batch_size=args.per_gpu_train_batch_size, drop_last=True)
 
     # prepare optimizers and schedulers
     gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
     dis, dis_optimizer = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
 
-    decoder = GRUDecoder(768, tokenizer.vocab_size, 768, 4, .2)
-    autoencoder = Autoencoder(gen, decoder, args.device).to(args.device)
 
-    # TOOD: create autoencoder training
-    # output = autoencoder(self.input, self.input)
+   
+    decoder = GRUDecoder(768, tokenizer.vocab_size, 768, 1, .2).to(args.device)
+    autoencoder = Autoencoder(gen, decoder, args.device, tokenizer=tokenizer).to(args.device)
+    if args.pretrained_autoencoder_path is not None:
+        autoencoder.load_state_dict(torch.load(os.path.join(args.output_dir, "autoencoder.pt")))
+    # TODO add arg for autoencder params
+    # Set up autoencoder
+    autoencoder_optimizer = optim.Adam(autoencoder.parameters(), lr=3e-4)
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
+    loss_df = pd.DataFrame(columns=['batch_num', 'loss'])
+    train_autoencoder(args, autoencoder, val_dataloader, val_dataloader, autoencoder_optimizer, 
+                      criterion, 1, loss_df, args.autoencoder_epochs)
 
     if args.mle_pretraining:
         _, gen_mle_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
@@ -196,7 +209,7 @@ if __name__ == '__main__':
             wandb.log({"generator loss": loss})
 
         set_seed(args)
-        if epoch % 2 == 0:
+        if args.record_run and epoch % 2 == 0:
             generated_samples = decoder.decode(gen.sample(10))
             wandb.log({"examples": wandb.Table(data=generated_samples, columns=["Generated Sequences"])})
             print("\n\n The generated samples are: ", generated_samples, "\n\n")

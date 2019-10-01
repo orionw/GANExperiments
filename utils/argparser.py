@@ -50,7 +50,8 @@ def parse_all_args(arglist):
      ## Other parameters
      parser.add_argument("--eval_data_file", default=None, type=str,
                     help="An optional input evaluation data file to evaluate the perplexity on (a text file).")
-
+     parser.add_argument("--pretrained_autoencoder_path", default=None, type=str, required=False,
+                    help="The output directory where the autoencoder model will be loaded from.")
      parser.add_argument("--loss_type", type=str, default="RSGAN",
                help="What type of loss to use for gan training")
      parser.add_argument("--mlm", action='store_true',
@@ -118,7 +119,7 @@ def parse_all_args(arglist):
                          "See details at https://nvidia.github.io/apex/amp.html")
      parser.add_argument("--local_rank", type=int, default=-1,
                     help="For distributed training: local_rank")
-     parser.add_argument("--max_seq_length", default=128, type=int,
+     parser.add_argument("--max_seq_length", default=16, type=int,
                help="The maximum total input sequence length after tokenization. Sequences longer "
                     "than this will be truncated, sequences shorter will be padded.")
      parser.add_argument('--server_ip', type=str, default='', help="For distant debugging.")
@@ -130,6 +131,7 @@ def parse_all_args(arglist):
      parser.add_argument("--top_k", type=int, default=0)
      parser.add_argument("--top_p", type=float, default=0.9)
      parser.add_argument("--n_gpu", type=int, default=1)
+     parser.add_argument("--autoencoder_epochs", type=int, default=100)
      parser.add_argument("--record_run", action="store_true", default=False)
      args = parser.parse_args()
 

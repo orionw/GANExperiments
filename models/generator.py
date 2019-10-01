@@ -23,11 +23,11 @@ class Generator(nn.Module):
         self.model = PretrainedTransformerGenerator(args, tokenizer)
         self.tokenizer = tokenizer
 
-    def forward(self, inputs, **kwargs):
+    def forward(self, **kwargs):
         """
         Embeds input and applies GRU one token at a time (seq_len = 1)
         """
-        return self.model.encode(inputs, **kwargs)
+        return self.model(**kwargs)
 
     def sample(self, num_samples):
         """

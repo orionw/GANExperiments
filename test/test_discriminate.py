@@ -21,7 +21,7 @@ class TestEmbeddings(unittest.TestCase):
 
     def test_embedder_discriminate_works(self):
         # create inital embedding
-        embed_outs = self.embed_model.encode(self.input)
+        embed_outs = self.embed_model(self.input)
         last_embedding = embed_outs[0]
         hidden = torch.mean(last_embedding, dim=1)  # get sentence embedding from mean of word embeddings
         hidden = hidden.unsqueeze(dim=0)

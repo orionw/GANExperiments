@@ -24,7 +24,7 @@ class TestEmbeddings(unittest.TestCase):
         outputs = model(self.input)
         last_hidden_states = outputs[0]  # The last hidden-state is the first element of the output tuple
 
-        embed_outs = self.embed_model.encode(self.input)
+        embed_outs = self.embed_model(self.input)
         last_embedding = embed_outs[0]
         assert torch.all(torch.eq(last_embedding, last_hidden_states)), "embeddings were not the same"
     
@@ -33,7 +33,7 @@ class TestEmbeddings(unittest.TestCase):
         lm_outputs = lmmodel(self.input)
         last_hidden_states_lm = lm_outputs[0]  # The last hidden-state is the first element of the output tuple
 
-        embed_outs_lm = self.embed_model(self.input)
+        embed_outs_lm = self.embed_model.lm(self.input)
         last_embedding_lm = embed_outs_lm[0]
         assert torch.all(torch.eq(last_embedding_lm, last_hidden_states_lm)), "LM embeddings were not the same"
     

@@ -8,14 +8,15 @@ python3 main.py \
     --dis_model_name_or_path=xlnet-base-cased \
     --do_train \
     --data_dir=./data/puns \
-    --max_seq_length=128 \
+    --max_seq_length=16 \
     --per_gpu_train_batch_size=16 \
     --learning_rate=5e-4 \
     --num_train_epochs=3.0 \
     --do_lower_case \
     --overwrite_output_dir \
     --gradient_accumulation_steps=12 \
-    --output_dir=./gan_results 
+    --output_dir=./gan_results \
+    --autoencoder_epochs 10
     # --mle_pretraining 
     # --fp16       
     # TODO: change the eval file to not be the train file
