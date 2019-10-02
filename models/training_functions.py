@@ -244,6 +244,7 @@ def prepare_opt_and_scheduler(args, model, data_len):
 
 def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, criterion, clip, loss_df, num_epochs):
     loss_list = []
+    recent_loss = []
     for epoch in range(num_epochs):
         loop = tqdm(total=len(train_dataloader), position=0, leave=True)
         for i, batch in enumerate(train_dataloader):
@@ -257,6 +258,7 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step()
             loss_list.append({'batch_num': model.number_of_batches_seen, 'loss': float(loss.item())})
+            recent_loss.append(loss.item())
             loop.set_description('epoch:{}. loss:{:.4f}'.format(epoch, float(loss.item())))
             loop.update(1)
 
@@ -266,16 +268,17 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
                 output_text = model.convert_to_text(output[0])
                 input_text = model.convert_to_text(target[0], given_ids=True)
                 sample_str = "The autoencoder recieved {} \n but produced {} \n".format(input_text, output_text)
-                print(sample_str)
                 if args.record_run:
-                    wandb.log({"autoencoder_samples": wandb.Table(data=sample_str, columns=["Autoencoder Samples"])})
+                    wandb.log({"autoencoder_samples": wandb.Table(data=[input_text, output_text], columns=["Input", "Output"])})
 
             # save losses
-            if model.number_of_batches_seen % 5 == 0:
+            if model.number_of_batches_seen % 50 == 0:
+                if args.record_run:
+                    wandb.log({"autoencoder_loss": np.mean(recent_loss)})
                 loss_df = loss_df.append(pd.DataFrame(loss_list), ignore_index=True)
                 loss_list = []
-                if args.record_run:
-                    wandb.log({"autoencoder_loss": np.mean(loss_list)})
+                recent_loss = []
+                
 
     if args.record_run:
         fig = loss_df.plot(x="batch_num", y="loss")
