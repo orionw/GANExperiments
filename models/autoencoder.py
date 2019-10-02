@@ -4,16 +4,13 @@ import random
 from models.training_functions import create_transformer_mapping
 
 class Autoencoder(nn.Module):
-    def __init__(self, encoder, decoder, device, tokenizer=None):
+    def __init__(self, encoder, decoder, device, tokenizer=None, model_type="xlnet"):
         super().__init__()
-
         self.encoder = encoder
-        # self.shrink = shrink_net
         self.decoder = decoder
         self.device = device
         self.number_of_batches_seen = 0
-        # TODO: make this dynamic
-        self.model_type = "xlnet"
+        self.model_type = model_type
         self.tokenizer = tokenizer
 
     # only purpose is to train encoder and decoder; doesn't need one without a target
@@ -35,7 +32,6 @@ class Autoencoder(nn.Module):
             max_len = trg.shape[1] # how many words to output
 
         outputs = torch.zeros(max_len, batch_size, self.decoder.vocab_size).to(self.device)
-
 
         # convert for transformer encoding
         if (type(batch) == list or type(batch) == tuple) and len(batch) == 4:

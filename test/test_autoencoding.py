@@ -30,7 +30,7 @@ class TestAutoencoding(unittest.TestCase):
 
     def test_can_decode_basic(self):
         embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer)
-        gru_decoder = GRUDecoder(768, self.tokenizer.vocab_size, 768, 1, .2)
+        gru_decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=1, dropout=0)
         autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
         output = autoencoder(self.input, self.target)
 
@@ -41,7 +41,7 @@ class TestAutoencoding(unittest.TestCase):
 
     def test_can_decode_basic_more_layers(self):
         embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer)   
-        gru_decoder = GRUDecoder(768, self.tokenizer.vocab_size, 768, 4, .2)
+        gru_decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=4, dropout=.2)
         autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
         output = autoencoder(self.input, self.target)
 
@@ -52,7 +52,7 @@ class TestAutoencoding(unittest.TestCase):
 
     def test_decode_to_text(self):
         embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer) 
-        gru_decoder = GRUDecoder(768, self.tokenizer.vocab_size, 768, 4,.2)
+        gru_decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=4, dropout=.2)
         autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
         output = autoencoder(self.input, self.input)
 
@@ -70,7 +70,8 @@ class TestAutoencoding(unittest.TestCase):
         train_dl = DataLoader(train_ds, batch_size=1, shuffle=True)
         # create models
         embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer) 
-        decoder = GRUDecoder(768, self.tokenizer.vocab_size, 768, 1, 0).to(self.args.device) # warning: device is cpu for CI, slow
+        decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=1, dropout=0)
+        decoder = decoder.to(self.args.device) # warning: device is cpu for CI, slow
         autoencoder = Autoencoder(embed_model, decoder, self.args.device, tokenizer=self.tokenizer).to(self.args.device)
         # create needed params
         autoencoder_optimizer = optim.Adam(autoencoder.parameters(), lr=3e-4)

@@ -16,7 +16,7 @@ python3 main.py \
     --overwrite_output_dir \
     --gradient_accumulation_steps=12 \
     --output_dir=./gan_results \
-    --autoencoder_epochs 2
+    --autoencoder_epochs 0
     # --mle_pretraining 
     # --fp16       
     # TODO: change the eval file to not be the train file

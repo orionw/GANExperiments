@@ -1,20 +1,16 @@
-from __future__ import absolute_import, division, print_function
-
 import argparse
 import glob
 import logging
 import os
 import random
 import time
-
-
 import numpy as np
-import torch
-from torch.nn.functional import one_hot
-import torch.nn.functional as F
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import torch
+from torch.nn.functional import one_hot
+import torch.nn.functional as F
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
@@ -29,12 +25,12 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
                                   XLMConfig, XLMForSequenceClassification,
                                   XLMTokenizer, XLNetConfig,
                                   XLNetForSequenceClassification,
-                                  XLNetTokenizer)
-
-from pytorch_transformers import AdamW, WarmupLinearSchedule
+                                  XLNetTokenizer,
+                                  AdamW, WarmupLinearSchedule)
 
 from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
+
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +40,7 @@ def discriminator_eval(args, batch, model, tokenizer, prefix=""):
     outputs = model(**inputs)
     logits, _ = outputs[:2]
     return logits
+
 
 def create_transformer_mapping(batch, model_type="xlnet"):
     inputs =  { 'input_ids':      batch[0],

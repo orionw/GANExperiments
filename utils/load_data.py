@@ -1,4 +1,3 @@
-from torch.utils.data import Dataset, DataLoader
 import typing
 import os
 import pandas as pd
@@ -6,14 +5,15 @@ import torch
 import logging
 import pickle
 
-from utils.utils_glue import (compute_metrics, convert_examples_to_features,
-                        output_modes, processors)
-
+from torch.utils.data import Dataset, DataLoader
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
         TensorDataset)
 
-logger = logging.getLogger(__name__)
+from utils.utils_glue import (compute_metrics, convert_examples_to_features,
+                        output_modes, processors)
 
+
+logger = logging.getLogger(__name__)
 
 
 class DiscriminatorDatasetFromFile(Dataset):

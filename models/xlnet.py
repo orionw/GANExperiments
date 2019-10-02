@@ -13,7 +13,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" PyTorch XLNet model.
+""" 
+PyTorch XLNet model.
+Adapted from HuggingFace's repo to work with a embedding-GAN
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 

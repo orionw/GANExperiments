@@ -42,7 +42,6 @@ def adversarial_train(args, gen, dis, encoder, tokenizer, optimizer, training_da
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     total_loss = 0
     
-    # create real and generated dataloaders TODO: turn off evaluate=True after debugging is done
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter()
 
@@ -142,7 +141,6 @@ if __name__ == '__main__':
     tokenizer = dis.tokenizer
     gen = generative_transformers.PretrainedTransformerGenerator(args, dis.tokenizer)
     encoder = generative_transformers.PretrainedTransformerGenerator(args, dis.tokenizer)
-    # TODO make seperate classes for gen and embedder
     if args.record_run:
         wandb.init(project="humorgan", config=args)
         wandb.watch((gen, dis))
@@ -162,10 +160,10 @@ if __name__ == '__main__':
     gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
     dis, dis_optimizer = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
 
-    # TODO add arg for autoencder params
-    decoder = GRUDecoder(768, tokenizer.vocab_size, 768, 1, .2).to(args.device)
+    decoder = GRUDecoder(encoder.config.d_model, tokenizer.vocab_size, encoder.config.d_model, args.decoder_layers, 
+                         args.decoder_dropout).to(args.device)
     if args.autoencoder_epochs != 0:
-        autoencoder = Autoencoder(encoder, decoder, args.device, tokenizer=tokenizer).to(args.device)
+        autoencoder = Autoencoder(encoder, decoder, args.device, tokenizer=tokenizer, model_type=args.gen_model_type).to(args.device)
         if args.pretrained_autoencoder_path is not None:
             autoencoder.load_state_dict(torch.load(os.path.join(args.output_dir, "autoencoder.pt")))
         autoencoder_optimizer = optim.Adam(autoencoder.parameters(), lr=3e-4)

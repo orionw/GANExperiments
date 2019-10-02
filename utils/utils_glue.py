@@ -13,7 +13,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" BERT classification fine-tuning: utilities to work with GLUE tasks """
+""" 
+BERT classification fine-tuning: utilities to work with GLUE tasks 
+Adapted for use with a GAN: not sure if whole file is still needed
+TODO: clean up file
+"""
 
 from __future__ import absolute_import, division, print_function
 
