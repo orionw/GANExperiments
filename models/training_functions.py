@@ -7,6 +7,7 @@ import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import wandb
 
 import torch
 from torch.nn.functional import one_hot
