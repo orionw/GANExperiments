@@ -136,6 +136,7 @@ def parse_all_args(arglist):
     parser.add_argument("--n_gpu", type=int, default=1)
     parser.add_argument("--autoencoder_epochs", type=int, default=100)
     parser.add_argument("--record_run", action="store_true", default=False)
+    parser.add_argument("--autoencoder_only", action="store_true", default=False, help="to only run the autoencoder training and not the gan")
 
     args = parser.parse_args()
     return args

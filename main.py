@@ -171,6 +171,8 @@ if __name__ == '__main__':
         autoencoder = train_autoencoder(args, autoencoder, val_dataloader, val_dataloader, autoencoder_optimizer, 
                         criterion, 1, loss_df, args.autoencoder_epochs)
         gc.collect()
+        if args.autoencoder_only:
+            exit(1)
 
     if args.mle_pretraining:
         _, gen_mle_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))

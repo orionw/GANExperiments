@@ -247,10 +247,10 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
         loop = tqdm(total=len(train_dataloader), position=0, leave=True)
         for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
-            target = batch[0].cuda()
+            target = batch[0].to(arg.device)
             output = model(batch, target)
             # reshape the objects so that we can get the loss
-            output = output.permute((1, 2, 0)).cuda()
+            output = output.permute((1, 2, 0)).to(arg.device)
             loss = criterion(output, target)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
