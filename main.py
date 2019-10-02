@@ -13,7 +13,6 @@ import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import (DataLoader, Dataset, RandomSampler, SequentialSampler, TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
-from tensorboardX import SummaryWriter
 from tqdm import tqdm, trange
 
 import utils.argparser
