@@ -247,10 +247,10 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
         loop = tqdm(total=len(train_dataloader), position=0, leave=True)
         for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
-            target = batch[0].to(arg.device)
+            target = batch[0].to(args.device)
             output = model(batch, target)
             # reshape the objects so that we can get the loss
-            output = output.permute((1, 2, 0)).to(arg.device)
+            output = output.permute((1, 2, 0)).to(args.device)
             loss = criterion(output, target)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
@@ -273,10 +273,13 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
             if model.number_of_batches_seen % 5 == 0:
                 loss_df = loss_df.append(pd.DataFrame(loss_list), ignore_index=True)
                 loss_list = []
+                if args.record_run:
+                    wandb.log({"autoencoder_loss": np.mean(loss_list)})
 
     if args.record_run:
         fig = loss_df.plot(x="batch_num", y="loss")
         plt.savefig(os.path.join(args.output_dir, "loss.png"))
+        torch.save(model.state_dict(), os.path.join(args.output_dir, "autoencoder.pt"))
 
     return model
 
