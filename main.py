@@ -1,61 +1,50 @@
-from __future__ import print_function
 from math import ceil
 import numpy as np
 import sys
-import pdb
 import os
 import logging
 import pickle
 import pandas as pd
+import gc
 
 from tqdm import tqdm
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-
-from models.gru import GRUDecoder
-import models.generator as generator
-import models.discriminator as discriminator
-from models.xlnet import XLNetEmbedder
-from models.autoencoder import Autoencoder
-
-from utils.load_data import (DiscriminatorDatasetFromFile, load_and_cache_examples_generator, TextDataset, load_and_cache_examples)
-
-
-from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
-                              TensorDataset)
+from torch.utils.data import (DataLoader, Dataset, RandomSampler, SequentialSampler, TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
 from tensorboardX import SummaryWriter
 from tqdm import tqdm, trange
 
 import utils.argparser
-
+from utils.load_data import (DiscriminatorDatasetFromFile, load_and_cache_examples_generator, TextDataset, load_and_cache_examples)
 from metrics.loss import get_losses
-
 from models.training_functions import set_seed
-
-from utils.utils_glue import (compute_metrics, convert_examples_to_features,
-                        output_modes, processors)
-
-from models.training_functions import (train_generator_mle, prepare_opt_and_scheduler, discriminator_eval, train_autoencoder)
+from models.gru import GRUDecoder
+import models.generative_transformers as generative_transformers
+import models.discriminative_transformers as discriminative_transformers
+from models.xlnet import XLNetEmbedder
+from models.autoencoder import Autoencoder
+from utils.utils_glue import (compute_metrics, convert_examples_to_features, output_modes, processors)
+from models.training_functions import (train_generator_mle, prepare_opt_and_scheduler, discriminator_eval, train_autoencoder, 
+                                        create_transformer_mapping)
  
+
+logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                    datefmt = '%m/%d/%Y %H:%M:%S',
+                    level = logging.INFO)
 logger = logging.getLogger(__name__)
 
 ADV_TRAIN_EPOCHS = 50
 
 
-def adversarial_train(args, gen, dis, tokenizer, optimizer, real_dataset, num_steps, is_discriminator = True):
+def adversarial_train(args, gen, dis, encoder, tokenizer, optimizer, training_dataloader, num_steps, is_discriminator = True):
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     total_loss = 0
     
     # create real and generated dataloaders TODO: turn off evaluate=True after debugging is done
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter()
-
-    args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    train_sampler = RandomSampler(real_dataset) if args.local_rank == -1 else DistributedSampler(real_dataset)
-    training_dataloader = DataLoader(real_dataset, sampler=train_sampler, batch_size=args.train_batch_size, drop_last=True)
 
     if args.max_steps > 0:
         t_total = args.max_steps
@@ -87,12 +76,16 @@ def adversarial_train(args, gen, dis, tokenizer, optimizer, real_dataset, num_st
     train_iterator = trange(int(1), desc="Epoch", disable=args.local_rank not in [-1, 0])
     for _ in train_iterator:
         epoch_iterator = tqdm(training_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
-        for step, (real_batch) in enumerate(epoch_iterator):
-            dis.train()
-            gen.train()
-            gen_batch = gen.sample(args.train_batch_size)
-            # run both real and fake data
-            d_out_real = discriminator_eval(args, real_batch, dis, tokenizer)
+        for step, (batch) in enumerate(epoch_iterator):
+            gc.collect()
+            dis.train() if is_discriminator else gen.train() # only optimize the one
+            # Get real embeddings
+            batch = tuple(t.to(args.device) for t in batch)
+            batch_inputs = create_transformer_mapping(batch, "xlnet")
+            real_embedding = encoder(**batch_inputs)
+            d_out_real = discriminator_eval(args, real_embedding, dis, tokenizer)
+            # get fake embeddings
+            gen_batch = gen.sample(args.train_batch_size).cuda() # (1, batch_size, embedding_dim)
             d_out_fake = discriminator_eval(args, gen_batch, dis, tokenizer)
             # compute losses and return the relevant one
             assert d_out_real.shape == d_out_fake.shape, "shapes are not aligned, error"
@@ -145,9 +138,11 @@ if __name__ == '__main__':
 
     logger.info("Training/evaluation parameters %s", args)
     # get models
-    dis = discriminator.Discriminator(args)
+    dis = discriminative_transformers.PretrainedDiscriminativeTransformer(args)
     tokenizer = dis.tokenizer
-    gen = generator.Generator(args, dis.tokenizer)
+    gen = generative_transformers.PretrainedTransformerGenerator(args, dis.tokenizer)
+    encoder = generative_transformers.PretrainedTransformerGenerator(args, dis.tokenizer)
+    # TODO make seperate classes for gen and embedder
     if args.record_run:
         wandb.init(project="humorgan", config=args)
         wandb.watch((gen, dis))
@@ -155,6 +150,7 @@ if __name__ == '__main__':
     dis.to(args.device)
 
     # prepare main dataset
+    args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     loaded_val_dataset = DiscriminatorDatasetFromFile(args.eval_data_file, label="1")
     loaded_train_dataset = DiscriminatorDatasetFromFile(args.train_data_file, label="1")
     real_train_dataset = load_and_cache_examples(args, "cola", tokenizer, loaded_train_dataset, evaluate=True)
@@ -166,19 +162,18 @@ if __name__ == '__main__':
     gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
     dis, dis_optimizer = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
 
-
-   
-    decoder = GRUDecoder(768, tokenizer.vocab_size, 768, 1, .2).to(args.device)
-    autoencoder = Autoencoder(gen, decoder, args.device, tokenizer=tokenizer).to(args.device)
-    if args.pretrained_autoencoder_path is not None:
-        autoencoder.load_state_dict(torch.load(os.path.join(args.output_dir, "autoencoder.pt")))
     # TODO add arg for autoencder params
-    # Set up autoencoder
-    autoencoder_optimizer = optim.Adam(autoencoder.parameters(), lr=3e-4)
-    criterion = nn.CrossEntropyLoss(ignore_index=0)
-    loss_df = pd.DataFrame(columns=['batch_num', 'loss'])
-    autoencoder = train_autoencoder(args, autoencoder, val_dataloader, val_dataloader, autoencoder_optimizer, 
-                      criterion, 1, loss_df, args.autoencoder_epochs)
+    decoder = GRUDecoder(768, tokenizer.vocab_size, 768, 1, .2).to(args.device)
+    if args.autoencoder_epochs != 0:
+        autoencoder = Autoencoder(encoder, decoder, args.device, tokenizer=tokenizer).to(args.device)
+        if args.pretrained_autoencoder_path is not None:
+            autoencoder.load_state_dict(torch.load(os.path.join(args.output_dir, "autoencoder.pt")))
+        autoencoder_optimizer = optim.Adam(autoencoder.parameters(), lr=3e-4)
+        criterion = nn.CrossEntropyLoss(ignore_index=0)
+        loss_df = pd.DataFrame(columns=['batch_num', 'loss'])
+        autoencoder = train_autoencoder(args, autoencoder, val_dataloader, val_dataloader, autoencoder_optimizer, 
+                        criterion, 1, loss_df, args.autoencoder_epochs)
+        gc.collect()
 
     if args.mle_pretraining:
         _, gen_mle_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
@@ -195,15 +190,17 @@ if __name__ == '__main__':
         logger.info('### GAN EPOCH: {} ###'.format(epoch))
 
         # TRAIN DISCRIMINATOR
-        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer, dis_optimizer, real_train_dataset, 1)
+        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, tokenizer, dis_optimizer, val_dataloader, 1)
         print("#### Average disriminator loss : {} ####".format(loss))
-        wandb.log({"discriminator loss": loss})
+        if args.record_run:
+            wandb.log({"discriminator loss": loss})
         
         # TRAIN GENERATOR
         for gen_steps in range(3):
-            loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, tokenizer, gen_optimizer, 
-                                                                real_train_dataset, 1, is_discriminator=False)
+            loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, tokenizer, gen_optimizer, 
+                                                                val_dataloader, 1, is_discriminator=False)
             print("#### Average generator loss : {} ####".format(loss))
+        if args.record_run:
             wandb.log({"generator loss": loss})
 
         set_seed(args)

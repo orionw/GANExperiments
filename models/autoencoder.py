@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import random
+from models.training_functions import create_transformer_mapping
 
 class Autoencoder(nn.Module):
     def __init__(self, encoder, decoder, device, tokenizer=None):
@@ -17,6 +18,13 @@ class Autoencoder(nn.Module):
 
     # only purpose is to train encoder and decoder; doesn't need one without a target
     def forward(self, batch, trg, teacher_forcing_ratio=0.5):
+        """
+        The autoencoding function
+        param: batch: a tensor containing (1, batch_size, word_len)
+        param: trg: the target: identical to the batch
+        param: teacher_forcing_ratio: a float containing the percentage of the time to use teacher forcing
+        returns: a tensor containing the autoencoder value of shape (seq_len, batch_size, logits)
+        """
         batch = tuple(t.to(self.device) for t in batch)
         trg = trg.to(self.device)
 
@@ -31,21 +39,13 @@ class Autoencoder(nn.Module):
 
         # convert for transformer encoding
         if (type(batch) == list or type(batch) == tuple) and len(batch) == 4:
-            inputs =  { 'input_ids':      batch[0],
-                        'attention_mask': batch[1],
-                        'token_type_ids': batch[2] if self.model_type in ['bert', 'xlnet'] else None,  # XLM and RoBERTa don't use segment_ids
-                        'labels':         batch[3]}
+            inputs = create_transformer_mapping(batch, self.model_type)
         else:
             # only passed in the word tokens
-            inputs =  { 'input_ids':      batch[0].unsqueeze(0)}
+            inputs =  {'input_ids': batch[0]}  # after -> (1, batch_size, word_length)
 
         hidden = self.encoder(**inputs)
 
-        # TODO: move this into the encoding step
-        #  https://github.com/huggingface/pytorch-pretrained-BERT#usage
-        hidden = hidden[0]  # ignore pooled output
-        hidden = torch.mean(hidden, dim=1)  # get sentence embedding from mean of word embeddings
-        hidden = hidden.unsqueeze(dim=0) #
         # first input to the decoder is the <sos> tokens
         curr_token = trg[:, 0]
 

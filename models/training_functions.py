@@ -33,7 +33,6 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
-from models.training_functions import set_seed
 from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
 
@@ -41,14 +40,17 @@ logger = logging.getLogger(__name__)
 
 
 def discriminator_eval(args, batch, model, tokenizer, prefix=""):
-    batch = tuple(t.to(args.device) for t in batch)
+    inputs =  { 'given_embedding': batch}
+    outputs = model(**inputs)
+    logits, _ = outputs[:2]
+    return logits
+
+def create_transformer_mapping(batch, model_type="xlnet"):
     inputs =  { 'input_ids':      batch[0],
                 'attention_mask': batch[1],
-                'token_type_ids': batch[2] if args.dis_model_type in ['bert', 'xlnet'] else None,  # XLM and RoBERTa don't use segment_ids
+                'token_type_ids': batch[2] if model_type in ['bert', 'xlnet'] else None,  # XLM and RoBERTa don't use segment_ids
                 'labels':         batch[3]}
-    outputs = model(**inputs)
-    loss, logits = outputs[:2]
-    return logits
+    return inputs
 
 
 def mask_tokens(inputs, tokenizer, args):
@@ -276,7 +278,7 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
                 loss_df = loss_df.append(pd.DataFrame(loss_list), ignore_index=True)
                 loss_list = []
 
-    if True or args.record_run:
+    if args.record_run:
         fig = loss_df.plot(x="batch_num", y="loss")
         plt.savefig(os.path.join(args.output_dir, "loss.png"))
 

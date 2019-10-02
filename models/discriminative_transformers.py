@@ -1,13 +1,10 @@
-""" Finetuning the library models for sequence classification on (Bert, XLM, XLNet, RoBERTa)."""
-from __future__ import absolute_import, division, print_function
-
 import argparse
 import glob
 import logging
 import os
 import random
-
 import numpy as np
+
 import torch
 import torch.nn as nn
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
@@ -24,12 +21,12 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
                                   XLMConfig, XLMForSequenceClassification,
                                   XLMTokenizer, XLNetConfig,
                                   XLNetForSequenceClassification,
-                                  XLNetTokenizer)
-
-from pytorch_transformers import AdamW, WarmupLinearSchedule
+                                  XLNetTokenizer,
+                                  AdamW, WarmupLinearSchedule)
 
 from models.xlnet import XLNetForSequenceClassificationGivenEmbedding
 from models.training_functions import set_seed
+from models.base_models import DiscriminatorBase
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +39,9 @@ MODEL_CLASSES = {
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
 }
 
-class PretrainedDiscriminativeTransformer(nn.Module):
+class PretrainedDiscriminativeTransformer(DiscriminatorBase):
     def __init__(self, args):
-        super().__init__()
-        self.args = args
-
+        super().__init__(args)
         # Load pretrained model and tokenizer
         if args.local_rank not in [-1, 0]:
             torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
@@ -58,9 +53,6 @@ class PretrainedDiscriminativeTransformer(nn.Module):
         config = config_class.from_pretrained(args.config_name if args.config_name else args.dis_model_name_or_path, num_labels=num_labels, finetuning_task=finetuning_task)
         self.tokenizer = self.tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.dis_model_name_or_path, do_lower_case=args.do_lower_case)
         self.model = self.model_class.from_pretrained(args.dis_model_name_or_path, from_tf=bool('.ckpt' in args.dis_model_name_or_path), config=config)
-
-        if args.local_rank == 0:
-            torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
     def forward(self, **kwargs):
         return self.model(**kwargs)
