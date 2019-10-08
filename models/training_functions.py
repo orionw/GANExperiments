@@ -279,7 +279,6 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
                 with torch.no_grad():
                     stats = np.array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.])
                     val_losses = []
-                    bleu_scores = []
                     for i, val_batch in enumerate(val_dataloader):
                         target = val_batch[0].to(args.device)
                         output = model(val_batch, target) 
@@ -305,7 +304,7 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
     if args.record_run:
         fig = loss_df.plot(x="batch_num", y="loss")
         plt.savefig(os.path.join(args.output_dir, "loss.png"))
-        torch.save(model.state_dict(), os.path.join(args.output_dir, "autoencoder-{}-batches.pt".format(model.number_of_batches_seen)))
+        torch.save(model.state_dict(), os.path.join(args.output_dir, "autoencoder-{}-{}-batches.pt".format(str(time.time()), model.number_of_batches_seen)))
 
     return model
 

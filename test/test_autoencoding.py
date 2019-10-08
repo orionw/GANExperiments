@@ -54,7 +54,7 @@ class TestAutoencoding(unittest.TestCase):
         embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer) 
         gru_decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=4, dropout=.2)
         autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
-        output = autoencoder(self.input, self.input)
+        output = autoencoder(self.input, self.target)
 
         # get text output
         _, best_guess = torch.max(output, dim=2)

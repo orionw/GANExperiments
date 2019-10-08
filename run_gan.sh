@@ -8,17 +8,17 @@ python3 main.py \
     --do_train \
     --data_dir=./data/puns \
     --max_seq_length=32 \
-    --per_gpu_train_batch_size=16 \
+    --per_gpu_train_batch_size=32 \
     --learning_rate=5e-4 \
     --num_train_epochs=3.0 \
     --do_lower_case \
     --overwrite_output_dir \
     --gradient_accumulation_steps=12 \
     --output_dir=./gan_results \
-    --autoencoder_epochs 500 \
+    --autoencoder_epochs 1 \
     --autoencoder_only \
-    --autoencoder_learning_rate 0.001 
-    # --record_run
+    --autoencoder_learning_rate 0.001 \
+    --record_run
     # --mle_pretraining 
     # --fp16       
     # TODO: change the eval file to not be the train file
