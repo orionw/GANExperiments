@@ -207,6 +207,8 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
         # For classification tasks, the first vector (corresponding to [CLS]) is
         # used as as the "sentence vector". Note that this only makes sense because
         # the entire model is fine-tuned.
+
+        # add padding token here
         tokens = tokens_a + [sep_token]
         if sep_token_extra:
             # roberta uses an extra separator b/w pairs of sentences
@@ -225,7 +227,6 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
             segment_ids = [cls_token_segment_id] + segment_ids
 
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
         # The mask has 1 for real tokens and 0 for padding tokens. Only real
         # tokens are attended to.
         input_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)

@@ -30,6 +30,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 
 from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
+from metrics.bleu import *
 
 
 logger = logging.getLogger(__name__)
@@ -245,6 +246,8 @@ def prepare_opt_and_scheduler(args, model, data_len):
 def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, criterion, clip, loss_df, num_epochs):
     loss_list = []
     recent_loss = []
+    mean_val_loss = float("inf")
+    val_bleu = 0
     for epoch in range(num_epochs):
         loop = tqdm(total=len(train_dataloader), position=0, leave=True)
         for i, batch in enumerate(train_dataloader):
@@ -259,10 +262,10 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
             optimizer.step()
             loss_list.append({'batch_num': model.number_of_batches_seen, 'loss': float(loss.item())})
             recent_loss.append(loss.item())
-            loop.set_description('epoch:{}. loss:{:.4f}'.format(epoch, float(loss.item())))
+            loop.set_description('epoch:{}. loss:{:.4f}. last_val_loss:{:.4f}. last_val_bleu:{:.4f}'.format(epoch, float(loss.item()),
+                                                                                                            mean_val_loss, val_bleu))
             loop.update(1)
-
-            if model.number_of_batches_seen % 500 == 0:
+            if model.number_of_batches_seen % 100 == 0:
                 torch.save(model.state_dict(), os.path.join(args.output_dir, "autoencoder.pt"))
                 # see example of output to see how we're doing
                 output_text = model.convert_to_text(output[0])
@@ -272,18 +275,37 @@ def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, 
                     wandb.log({"autoencoder_samples": wandb.Table(data=[input_text, output_text], columns=["Input", "Output"])})
 
             # save losses
-            if model.number_of_batches_seen % 50 == 0:
+            if model.number_of_batches_seen % 100 == 0:
+                with torch.no_grad():
+                    stats = np.array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.])
+                    val_losses = []
+                    bleu_scores = []
+                    for i, val_batch in enumerate(val_dataloader):
+                        target = val_batch[0].to(args.device)
+                        output = model(val_batch, target) 
+                        # reshape the objects so that we can get the loss -> now size (batch_size. logits, seq_len)
+                        output = output.permute((1, 2, 0)).to(args.device)
+                        val_loss = criterion(output, target)
+                        val_losses.append(val_loss.item())
+                        _, best_guess = torch.max(output, dim=1)  # the logit dimension
+                        # calculates bleu statistics and sum them up
+                        stats += get_bleu(best_guess, val_batch[0])
+                    val_bleu = bleu(stats)
+                    mean_val_loss = np.mean(val_losses)
+
                 if args.record_run:
-                    wandb.log({"autoencoder_loss": np.mean(recent_loss)})
-                loss_df = loss_df.append(pd.DataFrame(loss_list), ignore_index=True)
-                loss_list = []
-                recent_loss = []
+                    wandb.log({"autoencoder_training_loss": np.mean(recent_loss)})
+                    wandb.log({"autoencoder_val_loss": mean_val_loss})
+                    wandb.log({"autoencoder_bleu": val_bleu})
+                    loss_df = loss_df.append(pd.DataFrame(loss_list), ignore_index=True)
+                    loss_list = []
+                    recent_loss = []
                 
 
     if args.record_run:
         fig = loss_df.plot(x="batch_num", y="loss")
         plt.savefig(os.path.join(args.output_dir, "loss.png"))
-        torch.save(model.state_dict(), os.path.join(args.output_dir, "autoencoder.pt"))
+        torch.save(model.state_dict(), os.path.join(args.output_dir, "autoencoder-{}-batches.pt".format(model.number_of_batches_seen)))
 
     return model
 

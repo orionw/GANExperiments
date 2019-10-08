@@ -75,6 +75,9 @@ class PretrainedTransformerGenerator(GeneratorBase):
         embedding = embedding.unsqueeze(dim=0) # (1, batch_size, embedding_dim)
         return embedding
 
+    def decode(self, embedding, target=None):
+        return self.model.decode((embedding, ), target)
+
     def sample(self, num_samples: int):
         if self.args.length < 0 and self.config.max_position_embeddings > 0:
             self.length = self.config.max_position_embeddings

@@ -28,6 +28,7 @@ from models.autoencoder import Autoencoder
 from utils.utils_glue import (compute_metrics, convert_examples_to_features, output_modes, processors)
 from models.training_functions import (train_generator_mle, prepare_opt_and_scheduler, discriminator_eval, train_autoencoder, 
                                         create_transformer_mapping)
+from models.transformer import make_decoder_model
  
 
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -147,29 +148,37 @@ if __name__ == '__main__':
     gen.to(args.device)
     dis.to(args.device)
 
-    # prepare main dataset
+    # prepare main datasets
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    loaded_val_dataset = DiscriminatorDatasetFromFile(args.eval_data_file, label="1")
     loaded_train_dataset = DiscriminatorDatasetFromFile(args.train_data_file, label="1")
     real_train_dataset = load_and_cache_examples(args, "cola", tokenizer, loaded_train_dataset, evaluate=True)
+    train_sampler = RandomSampler(real_train_dataset) if args.local_rank == -1 else DistributedSampler(real_train_dataset)
+    train_dataloader = DataLoader(real_train_dataset, sampler=train_sampler, batch_size=args.per_gpu_train_batch_size, drop_last=True)
+
+    loaded_val_dataset = DiscriminatorDatasetFromFile(args.eval_data_file, label="1")
     real_val_dataset = load_and_cache_examples(args, "cola", tokenizer, loaded_train_dataset, evaluate=True)
     val_sampler = RandomSampler(real_val_dataset) if args.local_rank == -1 else DistributedSampler(real_val_dataset)
     val_dataloader = DataLoader(real_val_dataset, sampler=val_sampler, batch_size=args.per_gpu_train_batch_size, drop_last=True)
+
+
 
     # prepare optimizers and schedulers
     gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
     dis, dis_optimizer = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
 
+    word_embedder = encoder._modules["model"]._modules["transformer"]._modules["word_embedding"]
+    # decoder = make_decoder_model(tokenizer.vocab_size, d_model=encoder.config.d_model, N=args.decoder_layers, d_ff=2048,
+    #                              h=8, dropout=args.decoder_dropout, embedder=word_embedder).to(args.device)
     decoder = GRUDecoder(encoder.config.d_model, tokenizer.vocab_size, encoder.config.d_model, args.decoder_layers, 
-                         args.decoder_dropout).to(args.device)
+                            args.decoder_dropout).to(args.device)
     if args.autoencoder_epochs != 0:
         autoencoder = Autoencoder(encoder, decoder, args.device, tokenizer=tokenizer, model_type=args.gen_model_type).to(args.device)
         if args.pretrained_autoencoder_path is not None:
             autoencoder.load_state_dict(torch.load(os.path.join(args.output_dir, "autoencoder.pt")))
-        autoencoder_optimizer = optim.Adam(autoencoder.parameters(), lr=3e-4)
-        criterion = nn.CrossEntropyLoss(ignore_index=0)
+        autoencoder_optimizer = optim.Adam(decoder.parameters(), lr=args.autoencoder_learning_rate)
+        criterion = nn.CrossEntropyLoss()
         loss_df = pd.DataFrame(columns=['batch_num', 'loss'])
-        autoencoder = train_autoencoder(args, autoencoder, val_dataloader, val_dataloader, autoencoder_optimizer, 
+        autoencoder = train_autoencoder(args, autoencoder, train_dataloader, val_dataloader, autoencoder_optimizer, 
                         criterion, 1, loss_df, args.autoencoder_epochs)
         gc.collect()
         if args.autoencoder_only:

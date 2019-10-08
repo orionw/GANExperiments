@@ -123,7 +123,7 @@ def parse_all_args(arglist):
                  "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--decoder_layers", default=1, type=int,
             help="The number of layers used for the decoder")
-    parser.add_argument("--decoder_dropout", default=0.5, type=float,
+    parser.add_argument("--decoder_dropout", default=0, type=float,
             help="The amount of dropout to use if decoder_layers is greater than 1, else no effect")
     parser.add_argument('--server_ip', type=str, default='', help="For distant debugging.")
     parser.add_argument('--server_port', type=str, default='', help="For distant debugging.")
@@ -135,6 +135,7 @@ def parse_all_args(arglist):
     parser.add_argument("--top_p", type=float, default=0.9)
     parser.add_argument("--n_gpu", type=int, default=1)
     parser.add_argument("--autoencoder_epochs", type=int, default=100)
+    parser.add_argument("--autoencoder_learning_rate", type=float, default=3e-4)
     parser.add_argument("--record_run", action="store_true", default=False)
     parser.add_argument("--autoencoder_only", action="store_true", default=False, help="to only run the autoencoder training and not the gan")
 
