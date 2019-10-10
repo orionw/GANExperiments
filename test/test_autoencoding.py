@@ -80,4 +80,20 @@ class TestAutoencoding(unittest.TestCase):
         # see if it works
         autoencoder = train_autoencoder(self.args, autoencoder, train_dl, train_dl, autoencoder_optimizer, criterion, 1, loss_df, num_epochs=2)
 
+#    def test_autoencoder_loading(self):
+#         # create a one sample dataframe for the test
+#         train_ds = TensorDataset(self.input.squeeze(0), self.input.squeeze(0)) # need two dimensional (1, 7) shape for input
+#         train_dl = DataLoader(train_ds, batch_size=1, shuffle=True)
+#         # create models
+#         embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer) 
+#         decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=1, dropout=0)
+#         decoder = decoder.to(self.args.device) # warning: device is cpu for CI, slow
+#         autoencoder = Autoencoder(embed_model, decoder, self.args.device, tokenizer=self.tokenizer).to(self.args.device)
+#         # create needed params
+#         autoencoder_optimizer = optim.Adam(autoencoder.parameters(), lr=3e-4)
+#         criterion = nn.CrossEntropyLoss(ignore_index=0)
+#         loss_df = pd.DataFrame(columns=['batch_num', 'loss'])
+#         # see if it works
+#         autoencoder = train_autoencoder(self.args, autoencoder, train_dl, train_dl, autoencoder_optimizer, criterion, 1, loss_df, num_epochs=2)
+
 

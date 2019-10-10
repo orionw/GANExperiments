@@ -64,9 +64,7 @@ if __name__ == '__main__':
     tokenizer = dis.tokenizer
     gen = generative_transformers.PretrainedTransformerGenerator(args, dis.tokenizer)
     encoder = generative_transformers.PretrainedTransformerGenerator(args, dis.tokenizer)
-    gen.to(args.device)
-    dis.to(args.device)
-
+    
     word_embedder = encoder._modules["model"]._modules["transformer"]._modules["word_embedding"]
     # decoder = make_decoder_model(tokenizer.vocab_size, d_model=encoder.config.d_model, N=args.decoder_layers, d_ff=2048,
     #                              h=8, dropout=args.decoder_dropout, embedder=word_embedder).to(args.device)
@@ -100,8 +98,7 @@ if __name__ == '__main__':
 
     prev_epochs = 0
     if args.pretrained_generator_path:
-        # TODO: change this to load and save optimizer too
-        checkpoint = torch.load(os.path.join(args.output_dir, "checkpoint-gan-{}.pt".format(args.run_name_gan)))
+        checkpoint = torch.load(os.path.join(args.output_dir, "checkpoint-gan-{}.tar".format(args.run_name_gan)))
         gen.load_state_dict(checkpoint['gen_state_dict'])
         dis.load_state_dict(checkpoint['dis_state_dict'])
         gen_optimizer.load_state_dict(checkpoint['gen_optimizer_state_dict'])
@@ -129,7 +126,10 @@ if __name__ == '__main__':
 
     # ADVERSARIAL TRAINING
     best_gen_loss = float("inf")
+    gen.to(args.device)
+    dis.to(args.device)
     for epoch in range(args.num_train_epochs):
+        saved = False
         logger.info('### GAN EPOCH: {} ###'.format(epoch))
 
         # TRAIN DISCRIMINATOR
@@ -147,11 +147,12 @@ if __name__ == '__main__':
             if args.record_run:
                 wandb.log({"generator loss": loss})
             # save if the best loss or if K epochs have passed
-            if loss < best_gen_loss:
+            if not saved and loss < best_gen_loss:
                 save_states(args, gen, dis, gen_optimizer, dis_optimizer, epochs=epoch + prev_epochs, name="best")
-            if epoch and epoch % 25:
+                saved = True
+            if not saved and epoch and epoch % 25:
                 save_states(args, gen, dis, gen_optimizer, dis_optimizer, epochs=epoch + prev_epochs, name="time")
 
-        # if args.record_run and epoch % 2 == 0:
-        sample_and_record_text(args, gen, decoder, tokenizer)
+        if args.record_run and epoch % 2 == 0:
+            sample_and_record_text(args, gen, decoder, tokenizer)
         

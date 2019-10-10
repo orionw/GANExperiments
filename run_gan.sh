@@ -18,6 +18,7 @@ python3 main.py \
     --autoencoder_epochs 500 \
     --autoencoder_learning_rate 0.0001 \
     --pretrained_decoder_path \
-    --gan_only
+    --gan_only \
+    --record_run
     # --mle_pretraining 
     # --fp16       

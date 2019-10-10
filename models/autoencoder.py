@@ -16,7 +16,6 @@ class Autoencoder(nn.Module):
         self.tokenizer = tokenizer
         self.init_pad_tokens = None
 
-    # only purpose is to train encoder and decoder; doesn't need one without a target
     def forward(self, batch, trg, teacher_forcing_ratio=0.5):
         """
         The autoencoding function
@@ -55,14 +54,15 @@ class Autoencoder(nn.Module):
         ys = torch.ones(1, 4).fill_(start_symbol).to(self.device)
         for i in range(max_len-1):
             out = model.decode(memory, src_mask, Variable(ys).to(self.device).long(), 
-                                Variable(subsequent_mask(ys.size(1)).to(self.device).long()))
+                                Variable(self.subsequent_mask(ys.size(1)).to(self.device).long()))
             prob = self.encoder.decode(out.squeeze(0))
             _, next_word = torch.max(prob[0], dim = 1)
             ys = torch.cat((ys, next_word.unsqueeze(0).float().to(self.device)), dim=1)
         return ys
 
-def subsequent_mask(size):
-    "Mask out subsequent positions."
-    attn_shape = (1, size, size)
-    subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
-    return torch.from_numpy(subsequent_mask) == 0
+    @staticmethod
+    def subsequent_mask(self, size):
+        "Mask out subsequent positions."
+        attn_shape = (1, size, size)
+        subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
+        return torch.from_numpy(subsequent_mask) == 0

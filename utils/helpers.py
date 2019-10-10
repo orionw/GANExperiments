@@ -1,6 +1,8 @@
 import torch
 import random
 import numpy as np
+import os
+import wandb
 
 def convert_to_text(output_logits, tokenizer, given_ids=False):
     """
@@ -45,9 +47,8 @@ def sample_and_record_text(args, gen, decoder, tokenizer):
     decoder.to("cpu:0")  # can't handle that much memory usage
     shaped_logits = decoded_logits.permute(2, 1, 0)  # swap axis for tokenizer to get (logits, batch_size, seq_len)
     text = vectorized_convert_to_text(shaped_logits, tokenizer)
-    print(text)
     if args.record_run:
-        wandb.log({"examples": wandb.Table(data=generated_samples, columns=["Generated Sequences"])})
+        wandb.log({"examples": wandb.Table(data=text, columns=["Generated Sequences"])})
 
 
 def set_seed(args):
@@ -67,5 +68,5 @@ def save_states(args, gen, dis, gen_opt, dis_opt, epochs, name="default"):
             "dis_state_dict": dis.state_dict(),
             'gen_optimizer_state_dict': gen_opt.state_dict(),
             'dis_optimizer_state_dict': dis_opt.state_dict(),
-            }, os.path.join(args.output_dir, "checkpoint-gan-{}-{}-best.pt".format(args.run_name, epochs)))
+            }, os.path.join(args.output_dir, "checkpoint-gan-{}-{}.tar".format(args.run_name, epochs)))
 
