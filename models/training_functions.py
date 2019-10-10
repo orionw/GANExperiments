@@ -30,6 +30,8 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 
 from utils.utils_glue import (compute_metrics, convert_examples_to_features,
                         output_modes, processors)
+from utils.helpers import convert_to_text, set_seed
+from metrics.loss import get_losses
 from metrics.bleu import *
 
 
@@ -244,74 +246,158 @@ def prepare_opt_and_scheduler(args, model, data_len):
 
 
 def train_autoencoder(args, model, train_dataloader, val_dataloader, optimizer, criterion, clip, loss_df, num_epochs):
-    loss_list = []
-    recent_loss = []
-    mean_val_loss = float("inf")
-    val_bleu = 0
-    for epoch in range(num_epochs):
-        loop = tqdm(total=len(train_dataloader), position=0, leave=True)
-        for i, batch in enumerate(train_dataloader):
-            optimizer.zero_grad()
-            target = batch[0].to(args.device)
-            output = model(batch, target)
-            # reshape the objects so that we can get the loss
-            output = output.permute((1, 2, 0)).to(args.device)
-            loss = criterion(output, target)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
-            optimizer.step()
-            loss_list.append({'batch_num': model.number_of_batches_seen, 'loss': float(loss.item())})
-            recent_loss.append(loss.item())
-            loop.set_description('epoch:{}. loss:{:.4f}. last_val_loss:{:.4f}. last_val_bleu:{:.4f}'.format(epoch, float(loss.item()),
-                                                                                                            mean_val_loss, val_bleu))
-            loop.update(1)
-            if model.number_of_batches_seen % 100 == 0:
-                torch.save(model.state_dict(), os.path.join(args.output_dir, "autoencoder.pt"))
-                # see example of output to see how we're doing
-                output_text = model.convert_to_text(output[0])
-                input_text = model.convert_to_text(target[0], given_ids=True)
-                sample_str = "The autoencoder recieved {} \n but produced {} \n".format(input_text, output_text)
-                if args.record_run:
-                    wandb.log({"autoencoder_samples": wandb.Table(data=[input_text, output_text], columns=["Input", "Output"])})
+    """
+    The training function for the autoencoder model
+    Inputs:
+        args: A Namespace of training args given at runtime
+        model: the Autoencoder model, containing an encoder and a decoder
+        train_dataloader: a dataloader of training data
+        val_dataloader: a dataloader of validation data
+        optimizer: the optimizer for the decoder (NOTE: the encoder should be pretrained)
+        criterion: the loss function to use
+        clip: the level to clip the loss at
+        loss_df: a Pandas DF to hold and plot loss values
+        num_epochs: the number of epochs to run the training
 
-            # save losses
-            if model.number_of_batches_seen % 100 == 0:
-                with torch.no_grad():
-                    stats = np.array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.])
-                    val_losses = []
-                    for i, val_batch in enumerate(val_dataloader):
-                        target = val_batch[0].to(args.device)
-                        output = model(val_batch, target) 
-                        # reshape the objects so that we can get the loss -> now size (batch_size. logits, seq_len)
-                        output = output.permute((1, 2, 0)).to(args.device)
-                        val_loss = criterion(output, target)
-                        val_losses.append(val_loss.item())
-                        _, best_guess = torch.max(output, dim=1)  # the logit dimension
-                        # calculates bleu statistics and sum them up
-                        stats += get_bleu(best_guess, val_batch[0])
-                    val_bleu = bleu(stats)
-                    mean_val_loss = np.mean(val_losses)
+    Returns:
+        the trained autoencoder model
 
-                if args.record_run:
-                    wandb.log({"autoencoder_training_loss": np.mean(recent_loss)})
-                    wandb.log({"autoencoder_val_loss": mean_val_loss})
-                    wandb.log({"autoencoder_bleu": val_bleu})
-                    loss_df = loss_df.append(pd.DataFrame(loss_list), ignore_index=True)
-                    loss_list = []
-                    recent_loss = []
-                
+    This function also logs to wandb if the options are selected.  It also saves the best model to file.
+    """
+    try:
+        loss_list = []
+        recent_loss = []
+        mean_val_loss = float("inf")
+        best_loss = float("inf")
+        val_bleu = 0
+        best_bleu = 0
+        for epoch in range(num_epochs):
+            loop = tqdm(total=len(train_dataloader), position=0, leave=True)
+            for i, batch in enumerate(train_dataloader):
+                optimizer.zero_grad()
+                target = batch[0].to(args.device)
+                output = model(batch, target)
+                # reshape the objects so that we can get the loss
+                output = output.permute((1, 2, 0)).to(args.device)
+                loss = criterion(output, target)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+                optimizer.step()
+                loss_list.append({'batch_num': model.number_of_batches_seen, 'loss': float(loss.item())})
+                recent_loss.append(loss.item())
+                loop.set_description('epoch:{}. loss:{:.4f}. last_val_loss:{:.4f}. last_val_bleu:{:.4f}'.format(epoch, float(loss.item()),
+                                                                                                                mean_val_loss, val_bleu))
+                loop.update(1)
+                if model.number_of_batches_seen % 100 == 0:
+                    # see example of output to see how we're doing
+                    output_text = convert_to_text(output[0], model.tokenizer)
+                    input_text = convert_to_text(target[0], model.tokenizer, given_ids=True)
+                    sample_str = "The autoencoder recieved {} \n but produced {} \n".format(input_text, output_text)
+                    if args.record_run:
+                        wandb.log({"autoencoder_samples": wandb.Table(data=[input_text, output_text], columns=["Input", "Output"])})
 
-    if args.record_run:
-        fig = loss_df.plot(x="batch_num", y="loss")
-        plt.savefig(os.path.join(args.output_dir, "loss.png"))
-        torch.save(model.state_dict(), os.path.join(args.output_dir, "autoencoder-{}-{}-batches.pt".format(str(time.time()), model.number_of_batches_seen)))
+                # save losses
+                if model.number_of_batches_seen % 100 == 0:
+                    with torch.no_grad():
+                        stats = np.array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.])
+                        val_losses = []
+                        for i, val_batch in enumerate(val_dataloader):
+                            target = val_batch[0].to(args.device)
+                            output = model(val_batch, target) 
+                            # reshape the objects so that we can get the loss -> now size (batch_size. logits, seq_len)
+                            output = output.permute((1, 2, 0)).to(args.device)
+                            val_loss = criterion(output, target)
+                            val_losses.append(val_loss.item())
+                            _, best_guess = torch.max(output, dim=1)  # the logit dimension
+                            # calculates bleu statistics and sum them up
+                            stats += get_bleu(best_guess, val_batch[0])
+                        val_bleu = bleu(stats)
+                        mean_val_loss = np.mean(val_losses)
 
-    return model
+                        if mean_val_loss < best_loss and val_bleu > best_bleu:
+                            # want the best model, no matter what
+                            torch.save(model.decoder.state_dict(), os.path.join(args.output_dir, "decoder-{}-best.pt".format(args.run_name)))
+
+                    if args.record_run:
+                        wandb.log({"autoencoder_training_loss": np.mean(recent_loss)})
+                        wandb.log({"autoencoder_val_loss": mean_val_loss})
+                        wandb.log({"autoencoder_bleu": val_bleu})
+                        loss_df = loss_df.append(pd.DataFrame(loss_list), ignore_index=True)
+                        loss_list = []
+                        recent_loss = []
+                    
+
+        if args.record_run and loss_df[0] != 0:
+            fig = loss_df.plot(x="batch_num", y="loss")
+            plt.savefig(os.path.join(args.output_dir, "loss.png"))
+            torch.save(model.decoder.state_dict(), os.path.join(args.output_dir, "decoder-{}-{}-batches.pt".format(str(time.time()), model.number_of_batches_seen)))
+
+        return model
+
+    except KeyboardInterrupt:
+        # save the model and leave
+        torch.save(model.decoder.state_dict(), os.path.join(args.output_dir, "decoder-{}-{}-batches.pt".format(str(time.time()), model.number_of_batches_seen)))
+        return model
+
+def adversarial_train(args, gen, dis, encoder, tokenizer, optimizer, training_dataloader, num_steps, is_discriminator = True):
+    set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
+    total_loss = 0
+
+    if args.max_steps > 0:
+        t_total = args.max_steps
+        args.num_train_epochs = args.max_steps // (len(training_dataloader) // args.gradient_accumulation_steps) + 1
+    else:
+        t_total = len(training_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
+
+    # multi-gpu training (should be after apex fp16 initialization)
+    if args.n_gpu > 1:
+       dis  = torch.nn.DataParallel(dis)
+       gen = torch.nn.DataParallel(gen)
+
+    # Distributed training (should be after apex fp16 initialization)
+    if args.local_rank != -1:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
+                                                          output_device=args.local_rank,
+                                                          find_unused_parameters=True)
+
+    logger.info("***** Running adversarial training *****")
+    logger.info("  Num examples = %d", len(training_dataloader))
+    logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
+    logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",
+                   args.train_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1))
+    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
+    logger.info("  Total optimization steps = %d", t_total)
+
+    train_iterator = trange(int(1), desc="Epoch", disable=args.local_rank not in [-1, 0])
+    for _ in train_iterator:
+        epoch_iterator = tqdm(training_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+        for step, (batch) in enumerate(epoch_iterator):
+            dis.train() if is_discriminator else gen.train() # only optimize the one
+            # Get real embeddings
+            batch = tuple(t.to(args.device) for t in batch)
+            batch_inputs = create_transformer_mapping(batch, "xlnet")
+            real_embedding = encoder(**batch_inputs)
+            d_out_real = discriminator_eval(args, real_embedding, dis, tokenizer)
+            # get fake embeddings
+            gen_batch = gen.sample(args.train_batch_size).cuda() # (1, batch_size, embedding_dim)
+            d_out_fake = discriminator_eval(args, gen_batch, dis, tokenizer)
+            # compute losses and return the relevant one
+            assert d_out_real.shape == d_out_fake.shape, "shapes are not aligned, error"
+            if is_discriminator:
+                _, loss = get_losses(d_out_real, d_out_fake, args.loss_type)
+            else:
+                loss, _ = get_losses(d_out_real, d_out_fake, args.loss_type)
+
+            optimize(optimizer, loss, dis if is_discriminator else gen)
+            total_loss += loss.item()
+
+    average_loss = total_loss / step if step != 0 else 0
+    return average_loss, optimizer, gen, dis
 
 
-def set_seed(args):
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if args.n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
+def optimize(opt, loss, model=None, retain_graph=False):
+    opt.zero_grad()
+    loss.backward(retain_graph=retain_graph)
+    if model is not None: 
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0) # 5 is from RelGan paper/impl.
+    opt.step()

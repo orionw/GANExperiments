@@ -49,8 +49,10 @@ def parse_all_args(arglist):
     ## Other parameters
     parser.add_argument("--eval_data_file", default=None, type=str,
             help="An optional input evaluation data file to evaluate the perplexity on (a text file).")
-    parser.add_argument("--pretrained_autoencoder_path", default=None, type=str, required=False,
-            help="The output directory where the autoencoder model will be loaded from.")
+    parser.add_argument("--pretrained_decoder_path", default=False, action="store_true", required=False,
+            help="Load the decoder from a saved directory")
+    parser.add_argument("--pretrained_generator_path", default=False, action="store_true", required=False,
+            help="Load the generator from a saved directory")
     parser.add_argument("--loss_type", type=str, default="RSGAN",
         help="What type of loss to use for gan training")
     parser.add_argument("--mlm", action='store_true',
@@ -89,7 +91,7 @@ def parse_all_args(arglist):
             help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
             help="Max gradient norm.")
-    parser.add_argument("--num_train_epochs", default=1.0, type=float,
+    parser.add_argument("--num_train_epochs", default=1, type=int,
             help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
             help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
@@ -134,10 +136,14 @@ def parse_all_args(arglist):
     parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--top_p", type=float, default=0.9)
     parser.add_argument("--n_gpu", type=int, default=1)
+    parser.add_argument("--gen_epochs_per_dis", type=int, default=1)
     parser.add_argument("--autoencoder_epochs", type=int, default=100)
     parser.add_argument("--autoencoder_learning_rate", type=float, default=3e-4)
     parser.add_argument("--record_run", action="store_true", default=False)
     parser.add_argument("--autoencoder_only", action="store_true", default=False, help="to only run the autoencoder training and not the gan")
+    parser.add_argument("--gan_only", action="store_true", default=False, help="to only run the gan training and not the autoencoder")
+    parser.add_argument("--run_name", type=str, default="default")
+    parser.add_argument("--run_name_gan", type=str, default="default")
 
     args = parser.parse_args()
     return args

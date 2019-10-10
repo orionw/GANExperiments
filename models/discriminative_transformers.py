@@ -24,8 +24,8 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
                                   AdamW, WarmupLinearSchedule)
 
 from models.xlnet import XLNetForSequenceClassificationGivenEmbedding
-from models.training_functions import set_seed
 from models.base_models import DiscriminatorBase
+from utils.helpers import set_seed
 
 logger = logging.getLogger(__name__)
 

@@ -15,7 +15,7 @@ from pytorch_transformers import OpenAIGPTLMHeadModel, OpenAIGPTTokenizer
 from pytorch_transformers import XLNetLMHeadModel, XLNetTokenizer
 from pytorch_transformers import TransfoXLLMHeadModel, TransfoXLTokenizer
 
-from models.training_functions import set_seed
+from utils.helpers import set_seed
 from models.base_models import GeneratorBase
 from models.xlnet import XLNetEmbedder
 
