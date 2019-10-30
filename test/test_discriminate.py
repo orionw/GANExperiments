@@ -37,7 +37,7 @@ class TestEmbeddings(unittest.TestCase):
     def test_full_model_discriminate_works(self):
         # create inital embedding, one step
         args = create_args()
-        full_model = PretrainedTransformerGenerator(args, self.tokenizer)
+        full_model = PretrainedTransformerGenerator(args)
         embedding = full_model(**self.transformer_input)
 
         # discriminate
@@ -71,7 +71,8 @@ def create_args():
             "config_name": None,
             "block_size": 16,
             "device": "cpu:0",
-            "record_run": False
+            "record_run": False,
+            "tokenizer_name": None,
     }
     namespace_args = Namespace(**args)
     return namespace_args

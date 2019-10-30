@@ -45,7 +45,7 @@ class TestEmbeddings(unittest.TestCase):
 
     def test_full_embedding(self):
         args = create_args()
-        full_model = PretrainedTransformerGenerator(args, self.tokenizer)
+        full_model = PretrainedTransformerGenerator(args)
         embedding = full_model(**self.transformer_input)
 
         # try original model

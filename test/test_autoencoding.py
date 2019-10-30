@@ -29,7 +29,7 @@ class TestAutoencoding(unittest.TestCase):
         self.target = self.input.squeeze(0)
 
     def test_can_decode_basic(self):
-        embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer)
+        embed_model = PretrainedTransformerGenerator(self.args)
         gru_decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=1, dropout=0)
         autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
         output = autoencoder(self.input, self.target)
@@ -40,7 +40,7 @@ class TestAutoencoding(unittest.TestCase):
         assert type(loss.item()) == float, "could not get loss value: type {}".format(type(loss.item()))
 
     def test_can_decode_basic_more_layers(self):
-        embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer)   
+        embed_model = PretrainedTransformerGenerator(self.args)   
         gru_decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=4, dropout=.2)
         autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
         output = autoencoder(self.input, self.target)
@@ -51,7 +51,7 @@ class TestAutoencoding(unittest.TestCase):
         assert type(loss.item()) == float, "could not get loss value: type {}".format(type(loss.item()))
 
     def test_decode_to_text(self):
-        embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer) 
+        embed_model = PretrainedTransformerGenerator(self.args) 
         gru_decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=4, dropout=.2)
         autoencoder = Autoencoder(embed_model, gru_decoder, "cpu:0").to("cpu:0")
         output = autoencoder(self.input, self.target)
@@ -69,7 +69,7 @@ class TestAutoencoding(unittest.TestCase):
         train_ds = TensorDataset(self.input.squeeze(0), self.input.squeeze(0)) # need two dimensional (1, 7) shape for input
         train_dl = DataLoader(train_ds, batch_size=1, shuffle=True)
         # create models
-        embed_model = PretrainedTransformerGenerator(self.args, self.tokenizer) 
+        embed_model = PretrainedTransformerGenerator(self.args) 
         decoder = GRUDecoder(embed_model.config.d_model, self.tokenizer.vocab_size, embed_model.config.d_model, n_layers=1, dropout=0)
         decoder = decoder.to(self.args.device) # warning: device is cpu for CI, slow
         autoencoder = Autoencoder(embed_model, decoder, self.args.device, tokenizer=self.tokenizer).to(self.args.device)
