@@ -61,49 +61,64 @@ if __name__ == '__main__':
 
     #### Get Models ####
     dis = discriminative_transformers.PretrainedDiscriminativeTransformer(args)
-    tokenizer = dis.tokenizer
-    gen = generative_transformers.PretrainedTransformerGenerator(args, dis.tokenizer)
-    encoder = generative_transformers.PretrainedTransformerGenerator(args, dis.tokenizer)
-    
-    word_embedder = encoder._modules["model"]._modules["transformer"]._modules["word_embedding"]
-    # decoder = make_decoder_model(tokenizer.vocab_size, d_model=encoder.config.d_model, N=args.decoder_layers, d_ff=2048,
-    #                              h=8, dropout=args.decoder_dropout, embedder=word_embedder).to(args.device)
-    decoder = GRUDecoder(encoder.config.d_model, tokenizer.vocab_size, encoder.config.d_model, args.decoder_layers, 
-                            args.decoder_dropout)
-    autoencoder = Autoencoder(encoder, decoder, args.device, tokenizer=tokenizer, model_type=args.gen_model_type)
+    dis_tokenizer = dis.tokenizer
+    gen = generative_transformers.PretrainedTransformerGenerator(args)
+    gen_tokenizer = gen.tokenizer
+    encoder = generative_transformers.PretrainedTransformerGenerator(args)
+    # lets verify that the model generates okay text
+    sampled_text = gen.sample_text(2)
+    print("Starting off, sampled text is ", sampled_text)
+
+    # TODO: clean up the hardcoded amount
+    if args.gen_model_type in ["gpt2", "ctrl"]:
+        decoder = GRUDecoder(gen.config.n_embd, gen_tokenizer.vocab_size, args.decoder_hidden, args.decoder_layers, args.decoder_dropout) # FOR GPT2
+    else:
+        decoder = GRUDecoder(gen.config.d_model, gen_tokenizer.vocab_size, args.decoder_hidden, args.decoder_layers, args.decoder_dropout)
+
+    autoencoder = Autoencoder(gen, decoder, args.device, tokenizer=gen_tokenizer, model_type=args.gen_model_type)
 
     if args.record_run:
-        wandb.init(project="humorgan", config=args)
+        wandb.init(project="humorgan", config=args, dir="~/wandb")
         wandb.watch((gen, dis))
 
     # prepare main datasets
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    loaded_train_dataset = DiscriminatorDatasetFromFile(args.train_data_file, label="1")
-    real_train_dataset = load_and_cache_examples(args, "cola", tokenizer, loaded_train_dataset, evaluate=True)
-    train_sampler = RandomSampler(real_train_dataset) if args.local_rank == -1 else DistributedSampler(real_train_dataset)
-    train_dataloader = DataLoader(real_train_dataset, sampler=train_sampler, batch_size=args.per_gpu_train_batch_size, drop_last=True)
+    print("Batch size is {}".format(args.train_batch_size))
 
-    loaded_val_dataset = DiscriminatorDatasetFromFile(args.eval_data_file, label="1")
-    real_val_dataset = load_and_cache_examples(args, "cola", tokenizer, loaded_train_dataset, evaluate=True)
-    val_sampler = RandomSampler(real_val_dataset) if args.local_rank == -1 else DistributedSampler(real_val_dataset)
-    val_dataloader = DataLoader(real_val_dataset, sampler=val_sampler, batch_size=args.per_gpu_train_batch_size, drop_last=True)
+    if args.gen_model_type in ["gpt2", "ctrl"]:
+        # don't need all types of input as the other models
+        train_dataset = load_and_cache_examples_generator(args, gen_tokenizer, evaluate=False)
+        val_dataset = load_and_cache_examples_generator(args, gen_tokenizer, evaluate=True)
+    else:
+        loaded_train_dataset = DiscriminatorDatasetFromFile(args.train_data_file, label="1")
+        train_dataset = load_and_cache_examples(args, "cola", gen_tokenizer, loaded_train_dataset, evaluate=False)
+        loaded_val_dataset = DiscriminatorDatasetFromFile(args.eval_data_file, label="1")
+        val_dataset = load_and_cache_examples(args, "cola", gen_tokenizer, loaded_train_dataset, evaluate=True)
+
+    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
+    train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.per_gpu_train_batch_size, drop_last=True)
+
+    val_sampler = RandomSampler(val_dataset) if args.local_rank == -1 else DistributedSampler(val_dataset)
+    val_dataloader = DataLoader(val_dataset, sampler=val_sampler, batch_size=args.per_gpu_train_batch_size, drop_last=True)
 
     # prepare optimizers and schedulers
-    gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
-    dis, dis_optimizer = prepare_opt_and_scheduler(args, dis, len(real_train_dataset))
+    gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(train_dataset))
+    dis, dis_optimizer = prepare_opt_and_scheduler(args, dis, len(train_dataset))
 
       # Load models if they are pretrained
     if args.pretrained_decoder_path:
+            print("Loading decoder state dict", "decoder-{}-best.pt".format(args.run_name))
             decoder.load_state_dict(torch.load(os.path.join(args.output_dir, "decoder-{}-best.pt".format(args.run_name))))
 
     prev_epochs = 0
-    if args.pretrained_generator_path:
-        checkpoint = torch.load(os.path.join(args.output_dir, "checkpoint-gan-{}.tar".format(args.run_name_gan)))
-        gen.load_state_dict(checkpoint['gen_state_dict'])
-        dis.load_state_dict(checkpoint['dis_state_dict'])
-        gen_optimizer.load_state_dict(checkpoint['gen_optimizer_state_dict'])
-        dis_optimizer.load_state_dict(checkpoint['dis_optimizer_state_dict'])
-        prev_epochs = checkpoint["epochs"]
+    # if args.pretrained_generator_path:
+    #     print("Loading pretrained generator...")
+    #     checkpoint = torch.load(os.path.join(args.output_dir, "checkpoint-gan-{}.tar".format(args.run_name_gan)))
+    #     gen.load_state_dict(checkpoint['gen_state_dict'])
+    #     dis.load_state_dict(checkpoint['dis_state_dict'])
+    #     gen_optimizer.load_state_dict(checkpoint['gen_optimizer_state_dict'])
+    #     dis_optimizer.load_state_dict(checkpoint['dis_optimizer_state_dict'])
+    #     prev_epochs = checkpoint["epochs"]
 
     #### AUTOENCODER TRAINING ####
     if args.autoencoder_epochs != 0 and not args.gan_only:
@@ -120,9 +135,19 @@ if __name__ == '__main__':
     if args.mle_pretraining:
         _, gen_mle_optimizer = prepare_opt_and_scheduler(args, gen, len(real_train_dataset))
         logger.info('### Starting Generator MLE Training... ###')
-        train_dataset = load_and_cache_examples_generator(args, tokenizer, evaluate=False)
-        eval_dataset = load_and_cache_examples_generator(args, tokenizer, evaluate=True)
-        train_generator_mle(args, train_dataset, gen, tokenizer, gen_mle_optimizer, eval_dataset)
+        train_dataset = load_and_cache_examples_generator(args, gen_tokenizer, evaluate=False)
+        eval_dataset = load_and_cache_examples_generator(args, gen_tokenizer, evaluate=True)
+        train_generator_mle(args, train_dataset, gen, gen_tokenizer, gen_mle_optimizer, eval_dataset)
+
+    # Lets verify the decoder works
+    test = iter(val_dataloader).next()
+    test_input = create_transformer_mapping(test, to_cuda=True)
+    gen, decoder = gen.cuda(), decoder.cuda()
+    generated = gen(**test_input)
+    logits_gen = decoder(generated, args.max_seq_length, 1, test[0].cuda(), device="cuda:0")
+    correct = convert_to_text(test[0].squeeze(0), gen_tokenizer, given_ids=True)
+    guess_gen = convert_to_text(logits_gen.squeeze(1).transpose(1, 0), gen_tokenizer)
+    assert correct == guess_gen, "Correct == Guess, correct {}, guess {}".format(correct, guess_gen)
 
     # ADVERSARIAL TRAINING
     best_gen_loss = float("inf")
@@ -133,7 +158,7 @@ if __name__ == '__main__':
         logger.info('### GAN EPOCH: {} ###'.format(epoch))
 
         # TRAIN DISCRIMINATOR
-        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, tokenizer, dis_optimizer, val_dataloader, 1)
+        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, tokenizer, dis_optimizer, train_dataloader, 1)
         print("#### Average disriminator loss : {} ####".format(loss))
         if args.record_run:
             # don't save the disciminator until the generator is saved
@@ -142,7 +167,7 @@ if __name__ == '__main__':
         # TRAIN GENERATOR
         for gen_steps in range(args.gen_epochs_per_dis):
             loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, tokenizer, gen_optimizer, 
-                                                                val_dataloader, 1, is_discriminator=False)
+                                                                train_dataloader, 1, is_discriminator=False)
             print("#### Average generator loss : {} ####".format(loss))
             if args.record_run:
                 wandb.log({"generator loss": loss})
@@ -150,7 +175,8 @@ if __name__ == '__main__':
             if not saved and loss < best_gen_loss:
                 save_states(args, gen, dis, gen_optimizer, dis_optimizer, epochs=epoch + prev_epochs, name="best")
                 saved = True
-            if not saved and epoch and epoch % 25:
+                best_gen_loss = loss
+            if not saved and epoch and epoch % 50:
                 save_states(args, gen, dis, gen_optimizer, dis_optimizer, epochs=epoch + prev_epochs, name="time")
 
         if args.record_run and epoch % 2 == 0:

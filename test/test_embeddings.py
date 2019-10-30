@@ -5,7 +5,7 @@ import logging
 import torch
 import pandas as pd
 import torch.nn as nn
-from pytorch_transformers import BertTokenizer, BertModel, BertForMaskedLM, XLMTokenizer, XLNetModel, XLNetTokenizer, XLNetLMHeadModel
+from transformers import BertTokenizer, BertModel, BertForMaskedLM, XLMTokenizer, XLNetModel, XLNetTokenizer, XLNetLMHeadModel
 
 from test.test_discriminate import create_args
 from models.xlnet import XLNetForSequenceClassificationGivenEmbedding, XLNetEmbedder, XLNetModelWithoutEmbedding

@@ -1,6 +1,6 @@
 python3 main.py \
-    --train_data_file=./data/puns/shortest.csv \
-    --eval_data_file=./data/puns/shortest.csv \
+    --train_data_file=./data/puns/train.csv \
+    --eval_data_file=./data/puns/val.csv \
     --gen_model_type=xlnet \
     --gen_model_name_or_path=xlnet-base-cased \
     --dis_model_type=xlnet \
@@ -8,7 +8,7 @@ python3 main.py \
     --do_train \
     --data_dir=./data/puns \
     --max_seq_length=32 \
-    --per_gpu_train_batch_size=1 \
+    --per_gpu_train_batch_size=16 \
     --learning_rate=5e-3 \
     --num_train_epochs=500 \
     --do_lower_case \
@@ -17,11 +17,9 @@ python3 main.py \
     --output_dir=./gan_results \
     --pretrained_decoder_path \
     --autoencoder_epochs 500 \
-    --autoencoder_learning_rate 0.0005 \
-    --gen_epochs_per_dis=1 \
-    --gan_only \
-    --loss_type=rsgan 
-
+    --autoencoder_learning_rate 0.0005 
     # --record_run
+        # --pretrained_decoder_path \
+
     # --mle_pretraining 
     # --fp16       

@@ -31,8 +31,8 @@ from torch import nn
 from torch.nn import functional as F
 from torch.nn import CrossEntropyLoss, MSELoss
 
-from pytorch_transformers.modeling_utils import PreTrainedModel, prune_linear_layer, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits
-from pytorch_transformers.modeling_xlnet import XLNetPreTrainedModel, XLNetModel, XLNetForSequenceClassification
+from transformers.modeling_utils import PreTrainedModel, prune_linear_layer, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits
+from transformers.modeling_xlnet import XLNetPreTrainedModel, XLNetModel, XLNetForSequenceClassification
 logger = logging.getLogger(__name__)
 
 XLNET_PRETRAINED_MODEL_ARCHIVE_MAP = {
@@ -88,7 +88,7 @@ class XLNetEmbedder(XLNetPreTrainedModel):
 
         self.transformer = XLNetModel(config)
         self.lm_loss = nn.Linear(config.d_model, config.n_token, bias=True)
-        self.init_weights(self.modules)
+        self.init_weights()
         self.tie_weights()
 
     def tie_weights(self):
@@ -178,7 +178,7 @@ class XLNetForSequenceClassificationGivenEmbedding(XLNetPreTrainedModel):
         self.transformer = XLNetModelWithoutEmbedding(config)
         self.sequence_summary = SequenceSummary(config)
         self.logits_proj = nn.Linear(config.d_model, config.num_labels)
-        self.init_weights(self.modules)
+        self.init_weights()
 
     def forward(self, given_embedding, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
                 token_type_ids=None, input_mask=None, head_mask=None, labels=None):

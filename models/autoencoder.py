@@ -7,6 +7,9 @@ import numpy as np
 
 class Autoencoder(nn.Module):
     def __init__(self, encoder, decoder, device, tokenizer=None, model_type="xlnet"):
+        """
+        Tokenizer is for the generator
+        """
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
@@ -16,7 +19,7 @@ class Autoencoder(nn.Module):
         self.tokenizer = tokenizer
         self.init_pad_tokens = None
 
-    def forward(self, batch, trg, teacher_forcing_ratio=0.5):
+    def forward(self, batch, trg, teacher_forcing_ratio=0.0):
         """
         The autoencoding function
         param: batch: a tensor containing (1, batch_size, word_len)
@@ -24,6 +27,7 @@ class Autoencoder(nn.Module):
         param: teacher_forcing_ratio: a float containing the percentage of the time to use teacher forcing
         returns: a tensor containing the autoencoder value of shape (seq_len, batch_size, logits)
         """
+        import pdb; pdb.set_trace()
         # prepare input
         batch = tuple(t.to(self.device) for t in batch)
         trg = trg.to(self.device)
@@ -42,7 +46,8 @@ class Autoencoder(nn.Module):
             inputs =  {'input_ids': batch[0]}  # after -> (1, batch_size, word_length)
 
         hidden = self.encoder(**inputs) # size ()
-        outputs = self.decoder(hidden, max_len, batch_size, trg, device=self.device, teacher_forcing_ratio=0.5)
+        outputs = self.decoder(hidden, max_len, batch_size, trg, device=self.device, 
+                               teacher_forcing_ratio=0.5 - min(0.5, self.number_of_batches_seen / 300))
     
         self.number_of_batches_seen += 1
         return outputs # (seq_len, batch_size, logits)

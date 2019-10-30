@@ -7,7 +7,7 @@ import pandas as pd
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset, TensorDataset
-from pytorch_transformers import BertTokenizer, BertModel, BertForMaskedLM, XLMTokenizer, XLNetModel, XLNetTokenizer, XLNetLMHeadModel
+from transformers import BertTokenizer, BertModel, BertForMaskedLM, XLMTokenizer, XLNetModel, XLNetTokenizer, XLNetLMHeadModel
 
 from models.xlnet import XLNetEmbedder, XLNetModelWithoutEmbedding
 from models.autoencoder import Autoencoder

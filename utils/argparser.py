@@ -1,11 +1,11 @@
 import argparse
 
-from pytorch_transformers import GPT2Config, OpenAIGPTConfig, XLNetConfig, TransfoXLConfig
-from pytorch_transformers import GPT2LMHeadModel, GPT2Tokenizer
-from pytorch_transformers import OpenAIGPTLMHeadModel, OpenAIGPTTokenizer
-from pytorch_transformers import XLNetLMHeadModel, XLNetTokenizer
-from pytorch_transformers import TransfoXLLMHeadModel, TransfoXLTokenizer
-from pytorch_transformers import (WEIGHTS_NAME, AdamW, WarmupLinearSchedule,
+from transformers import GPT2Config, OpenAIGPTConfig, XLNetConfig, TransfoXLConfig
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
+from transformers import OpenAIGPTLMHeadModel, OpenAIGPTTokenizer
+from transformers import XLNetLMHeadModel, XLNetTokenizer
+from transformers import TransfoXLLMHeadModel, TransfoXLTokenizer
+from transformers import (WEIGHTS_NAME, AdamW, WarmupLinearSchedule,
                                   BertConfig, BertForMaskedLM, BertTokenizer,
                                   GPT2Config, GPT2LMHeadModel, GPT2Tokenizer,
                                   OpenAIGPTConfig, OpenAIGPTLMHeadModel, OpenAIGPTTokenizer,
@@ -71,6 +71,8 @@ def parse_all_args(arglist):
                  "Default to the model max input length for single sentence inputs (take into account special tokens).")
     parser.add_argument("--do_train", action='store_true',
             help="Whether to run training.")
+    parser.add_argument("--repetition_penalty", type=float, default=1.0,
+                help="primarily useful for CTRL model; in that case, use 1.2")
     parser.add_argument("--do_eval", action='store_true',
             help="Whether to run eval on the dev set.")
     parser.add_argument("--evaluate_during_training", action='store_true',
@@ -125,6 +127,8 @@ def parse_all_args(arglist):
                  "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--decoder_layers", default=1, type=int,
             help="The number of layers used for the decoder")
+    parser.add_argument("--decoder_hidden", default=768, type=int,
+            help="The number of hidden nodes used for the decoder")
     parser.add_argument("--decoder_dropout", default=0, type=float,
             help="The amount of dropout to use if decoder_layers is greater than 1, else no effect")
     parser.add_argument('--server_ip', type=str, default='', help="For distant debugging.")
@@ -132,7 +136,7 @@ def parse_all_args(arglist):
     parser.add_argument("--prompt", type=str, default="")
     parser.add_argument("--padding_text", type=str, default="")
     parser.add_argument("--length", type=int, default=20)
-    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--top_p", type=float, default=0.9)
     parser.add_argument("--n_gpu", type=int, default=1)

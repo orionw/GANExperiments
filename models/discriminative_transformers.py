@@ -12,7 +12,7 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 
-from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
+from transformers import (WEIGHTS_NAME, BertConfig,
                                   BertForSequenceClassification, BertTokenizer,
                                   RobertaConfig,
                                   RobertaForSequenceClassification,
@@ -21,7 +21,13 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
                                   XLMTokenizer, XLNetConfig,
                                   XLNetForSequenceClassification,
                                   XLNetTokenizer,
-                                  AdamW, WarmupLinearSchedule)
+                                  DistilBertConfig,
+                                  DistilBertForSequenceClassification,
+                                  DistilBertTokenizer,
+                                  XLNetConfig, XLNetTokenizer,
+                                  CTRLLMHeadModel, CTRLTokenizer,
+                                  GPT2Config, GPT2LMHeadModel, GPT2Tokenizer, 
+                                  BertForMaskedLM, RobertaForMaskedLM, DistilBertForMaskedLM)
 
 from models.xlnet import XLNetForSequenceClassificationGivenEmbedding
 from models.base_models import DiscriminatorBase
@@ -32,12 +38,13 @@ logger = logging.getLogger(__name__)
 ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, XLNetConfig, XLMConfig, RobertaConfig)), ())
 
 MODEL_CLASSES = {
-    'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
+    'ctrl': (CTRLLMHeadModel, CTRLTokenizer),
     'xlnet': (XLNetConfig, XLNetForSequenceClassificationGivenEmbedding, XLNetTokenizer),
-    'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
-    'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
+    'gpt2': (GPT2Config, GPT2LMHeadModel, GPT2Tokenizer),
+    'bert': (BertConfig, BertForMaskedLM, BertTokenizer),
+    'roberta': (RobertaConfig, RobertaForMaskedLM, RobertaTokenizer),
+    'distilbert': (DistilBertConfig, DistilBertForMaskedLM, DistilBertTokenizer)
 }
-
 class PretrainedDiscriminativeTransformer(DiscriminatorBase):
     def __init__(self, args):
         super().__init__(args)

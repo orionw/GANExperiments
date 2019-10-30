@@ -60,7 +60,7 @@ def set_seed(args):
         torch.cuda.manual_seed_all(args.seed)
 
 
-def save_states(args, gen, dis, gen_opt, dis_opt, epochs, name="default"):
+def save_states(args, gen, dis, gen_opt, dis_opt, epochs, name="best"):
     """ Used for saving models, optimizers, and the number of epochs """
     torch.save({
             'epochs': epochs,
@@ -68,5 +68,5 @@ def save_states(args, gen, dis, gen_opt, dis_opt, epochs, name="default"):
             "dis_state_dict": dis.state_dict(),
             'gen_optimizer_state_dict': gen_opt.state_dict(),
             'dis_optimizer_state_dict': dis_opt.state_dict(),
-            }, os.path.join(args.output_dir, "checkpoint-gan-{}-{}.tar".format(args.run_name, epochs)))
+            }, os.path.join(args.output_dir, "checkpoint-gan-{}.tar".format(args.run_name)))
 

@@ -9,15 +9,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset)
 
-from pytorch_transformers import GPT2Config, OpenAIGPTConfig, XLNetConfig, TransfoXLConfig
-from pytorch_transformers import GPT2LMHeadModel, GPT2Tokenizer
-from pytorch_transformers import OpenAIGPTLMHeadModel, OpenAIGPTTokenizer
-from pytorch_transformers import XLNetLMHeadModel, XLNetTokenizer
-from pytorch_transformers import TransfoXLLMHeadModel, TransfoXLTokenizer
+from transformers import GPT2Config, OpenAIGPTConfig, XLNetConfig, TransfoXLConfig, XLMConfig, CTRLConfig
+
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
+from transformers import OpenAIGPTLMHeadModel, OpenAIGPTTokenizer
+from transformers import XLNetLMHeadModel, XLNetTokenizer
+from transformers import TransfoXLLMHeadModel, TransfoXLTokenizer
+from transformers import CTRLLMHeadModel, CTRLTokenizer, CTRLConfig
+from transformers import XLMWithLMHeadModel, XLMTokenizer
 
 from utils.helpers import set_seed
 from models.base_models import GeneratorBase
 from models.xlnet import XLNetEmbedder
+from models.gpt2 import GPT2Embedder
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +30,11 @@ MAX_LENGTH = int(10000)  # Hardcoded max length to avoid infinite loop
 ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (GPT2Config, OpenAIGPTConfig, XLNetConfig, TransfoXLConfig)), ())
 
 MODEL_CLASSES = {
-    'gpt2': (GPT2Config, GPT2LMHeadModel, GPT2Tokenizer),
+    'gpt2': (GPT2Config, GPT2Embedder, GPT2Tokenizer),
     'openai-gpt': (OpenAIGPTConfig, OpenAIGPTLMHeadModel, OpenAIGPTTokenizer),
     'xlnet': (XLNetConfig, XLNetEmbedder, XLNetTokenizer),
     'transfo-xl': (TransfoXLConfig, TransfoXLLMHeadModel, TransfoXLTokenizer),
+    'ctrl': (CTRLConfig, CTRLLMHeadModel, CTRLTokenizer)
 }
 
 # Padding text to help Transformer-XL and XLNet with short prompts as proposed by Aman Rusia
@@ -49,7 +54,7 @@ with people, even a bishop, begging for his blessing. <eod> </s> <eos>"""
 
 class PretrainedTransformerGenerator(GeneratorBase):
 
-    def __init__(self, args, tokenizer):
+    def __init__(self, args):
         super().__init__(args)
         # Load pretrained model and tokenizer
         if args.local_rank not in [-1, 0]:
@@ -57,7 +62,11 @@ class PretrainedTransformerGenerator(GeneratorBase):
 
         config_class, self.model_class, tokenizer_class = MODEL_CLASSES[args.gen_model_type]
         self.config = config_class.from_pretrained(args.config_name if args.config_name else args.gen_model_name_or_path)
-        self.tokenizer = tokenizer
+        if args.gen_model_type in ["gpt2"]: # NOTE: is "ctrl" needed for this
+            self.tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.gen_model_name_or_path, 
+                                                             do_lower_case=args.do_lower_case, sep_token="[SEP]", cls_token="[CLS]", pad_token="[PAD]")
+        else:
+            self.tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.gen_model_name_or_path, do_lower_case=args.do_lower_case)
         if args.block_size <= 0:
             args.block_size = self.tokenizer.max_len  # Our input block size will be the max possible for the model
         args.block_size = min(args.block_size, self.tokenizer.max_len)
@@ -123,9 +132,9 @@ class PretrainedTransformerGenerator(GeneratorBase):
             if sample_num % 100 == 0:
                 print("On sample number {}".format(sample_num))
             out = self.sample_sequence(
-                model=self.model,
-                context=context_tokens,
-                length=self.args.length,
+                self.model,
+                self.args.length,
+                context_tokens,
                 temperature=self.args.temperature,
                 top_k=self.args.top_k,
                 top_p=self.args.top_p,
@@ -137,16 +146,14 @@ class PretrainedTransformerGenerator(GeneratorBase):
             list_of_samples.append(sequence)
         return list_of_samples
 
-    def sample_sequence(self, length, model, context, num_samples=1, temperature=1, top_k=0, top_p=0.0, is_xlnet=False, device='cpu'):
+    def sample_sequence(self, model, length, context, num_samples=1, temperature=1, top_k=0, top_p=0.0, repetition_penalty=1.0,
+                    is_xlnet=False, is_xlm_mlm=False, xlm_mask_token=None, xlm_lang=None, device='cpu'):
         context = torch.tensor(context, dtype=torch.long, device=device)
-        context = context.unsqueeze(0).repeat(1, 1)
-        model.train()
-        final_generated = None
-        for sample in range(num_samples):
-            generated = context.clone()
-            model.train()
-            for _ in range(length):
-                
+        context = context.unsqueeze(0).repeat(num_samples, 1)
+        generated = context
+        with torch.no_grad():
+            for _ in trange(length):
+
                 inputs = {'input_ids': generated}
                 if is_xlnet: 
                     # XLNet is a direct (predict same token, not next token) and bi-directional model by default
@@ -158,13 +165,30 @@ class PretrainedTransformerGenerator(GeneratorBase):
                     target_mapping[0, 0, -1] = 1.0  # predict last token
                     inputs = {'input_ids': input_ids, 'perm_mask': perm_mask, 'target_mapping': target_mapping}
 
-                outputs = model(**inputs)  # Note: we could also use 'past' with GPT-2/Transfo-XL/XLNet (cached hidden-states)
-                next_token = torch.argmax(F.softmax(next_token_logits, dim=-1)).unsqueeze(0)
-                generated = torch.cat((generated.float(), next_token.unsqueeze(0).float()), dim=1)
+                if is_xlm_mlm and xlm_mask_token:
+                    # XLM MLM models are direct models (predict same token, not next token)
+                    # => need one additional dummy token in the input (will be masked and guessed)
+                    input_ids = torch.cat((generated, torch.full((1, 1), xlm_mask_token, dtype=torch.long, device=device)), dim=1)
+                    inputs = {'input_ids': input_ids}
 
-            final_generated = generated if final_generated is None else torch.cat((final_generated, generated), dim=0)
-        assert final_generated.requires_grad == True, "outputs do not require grad, error"
-        return final_generated
+                if xlm_lang is not None:
+                    inputs["langs"] = torch.tensor([xlm_lang] * inputs["input_ids"].shape[1], device=device).view(1, -1)
+
+                # use the language model part of the embedder
+                outputs = model.lm(**inputs)  # Note: we could also use 'past' with GPT-2/Transfo-XL/XLNet/CTRL (cached hidden-states)
+                next_token_logits = outputs[0][0, -1, :] / (temperature if temperature > 0 else 1.)
+
+                # # reptition penalty from CTRL (https://arxiv.org/abs/1909.05858)
+                # for _ in set(generated.view(-1).tolist()):
+                #     next_token_logits[_] /= repetition_penalty
+                    
+                filtered_logits = self.top_k_top_p_filtering(next_token_logits, top_k=top_k, top_p=top_p)
+                if temperature == 0: #greedy sampling:
+                    next_token = torch.argmax(filtered_logits).unsqueeze(0)
+                else:
+                    next_token = torch.multinomial(F.softmax(filtered_logits, dim=-1), num_samples=1)
+                generated = torch.cat((generated, next_token.unsqueeze(0)), dim=1)
+        return generated
 
     def sample_embeddings(self, model, context, num_samples=1, temperature=1, top_k=0, top_p=0.0, is_xlnet=False, device='cpu'):
         context = torch.tensor(context, dtype=torch.long, device=device)
@@ -268,35 +292,35 @@ class PretrainedTransformerGenerator(GeneratorBase):
         labels = torch.zeros(input_ids.shape[0]).long() # labels are all zeros
         return [input_ids, input_mask, segment_ids, labels]
 
-    # def top_k_top_p_filtering(self, logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
-    #     """ Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
-    #         Args:
-    #             logits: logits distribution shape (vocabulary size)
-    #             top_k > 0: keep only top k tokens with highest probability (top-k filtering).
-    #             top_p > 0.0: keep the top tokens with cumulative probability >= top_p (nucleus filtering).
-    #                 Nucleus filtering is described in Holtzman et al. (http://arxiv.org/abs/1904.09751)
-    #         From: https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
-    #     """
-    #     assert logits.dim() == 1  # batch size 1 for now - could be updated for more but the code would be less clear
-    #     top_k = min(top_k, logits.size(-1))  # Safety check
-    #     if top_k > 0:
-    #         # Remove all tokens with a probability less than the last token of the top-k
-    #         indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
-    #         logits[indices_to_remove] = filter_value
+    def top_k_top_p_filtering(self, logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
+        """ Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
+            Args:
+                logits: logits distribution shape (vocabulary size)
+                top_k > 0: keep only top k tokens with highest probability (top-k filtering).
+                top_p > 0.0: keep the top tokens with cumulative probability >= top_p (nucleus filtering).
+                    Nucleus filtering is described in Holtzman et al. (http://arxiv.org/abs/1904.09751)
+            From: https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
+        """
+        assert logits.dim() == 1  # batch size 1 for now - could be updated for more but the code would be less clear
+        top_k = min(top_k, logits.size(-1))  # Safety check
+        if top_k > 0:
+            # Remove all tokens with a probability less than the last token of the top-k
+            indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+            logits[indices_to_remove] = filter_value
 
-    #     if top_p > 0.0:
-    #         sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-    #         cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+        if top_p > 0.0:
+            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+            cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
 
-    #         # Remove tokens with cumulative probability above the threshold
-    #         sorted_indices_to_remove = cumulative_probs > top_p
-    #         # Shift the indices to the right to keep also the first token above the threshold
-    #         sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-    #         sorted_indices_to_remove[..., 0] = 0
+            # Remove tokens with cumulative probability above the threshold
+            sorted_indices_to_remove = cumulative_probs > top_p
+            # Shift the indices to the right to keep also the first token above the threshold
+            sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+            sorted_indices_to_remove[..., 0] = 0
 
-    #         indices_to_remove = sorted_indices[sorted_indices_to_remove]
-    #         logits[indices_to_remove] = filter_value
-    #     return logits
+            indices_to_remove = sorted_indices[sorted_indices_to_remove]
+            logits[indices_to_remove] = filter_value
+        return logits
 
     @staticmethod
     def add_gumbel(o_t, eps=1e-10, gpu=True):

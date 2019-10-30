@@ -85,17 +85,17 @@ def get_losses(d_out_real, d_out_fake, loss_type='JS'):
         g_loss = torch.mean(-d_out_fake)
 
     elif loss_type == 'hinge':  # the hinge loss
-        d_loss_real = torch.mean(nn.ReLU(1.0 - d_out_real))
-        d_loss_fake = torch.mean(nn.ReLU(1.0 + d_out_fake))
+        d_loss_real = torch.mean(F.relu(1.0 - d_out_real))
+        d_loss_fake = torch.mean(F.relu(1.0 + d_out_fake))
         d_loss = d_loss_real + d_loss_fake
 
         g_loss = -torch.mean(d_out_fake)
 
     elif loss_type == 'tv':  # the total variation distance
-        d_loss = torch.mean(nn.Tanh(d_out_fake) - nn.Tanh(d_out_real))
-        g_loss = torch.mean(-nn.Tanh(d_out_fake))
+        d_loss = torch.mean(F.tanh(d_out_fake) - F.tanh(d_out_real))
+        g_loss = torch.mean(-F.tanh(d_out_fake))
 
-    elif loss_type == 'RSGAN':  # relativistic standard GAN
+    elif loss_type == 'rsgan':  # relativistic standard GAN
         d_loss = bce_loss(d_out_real - d_out_fake, torch.ones_like(d_out_real))
         g_loss = bce_loss(d_out_fake - d_out_real, torch.ones_like(d_out_fake))
 

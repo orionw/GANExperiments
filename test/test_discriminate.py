@@ -7,7 +7,7 @@ import pandas as pd
 import torch.nn as nn
 from argparse import Namespace
 
-from pytorch_transformers import BertTokenizer, BertModel, BertForMaskedLM, XLMTokenizer, XLNetModel, XLNetTokenizer, XLNetLMHeadModel
+from transformers import BertTokenizer, BertModel, BertForMaskedLM, XLMTokenizer, XLNetModel, XLNetTokenizer, XLNetLMHeadModel
 
 from models.xlnet import XLNetForSequenceClassificationGivenEmbedding, XLNetEmbedder, XLNetModelWithoutEmbedding
 from models.generative_transformers import PretrainedTransformerGenerator

@@ -6,3 +6,4 @@ wandb/*
 runs/*
 gan_results/*
 data/*/*cached*
+~/wandb

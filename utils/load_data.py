@@ -33,28 +33,30 @@ class DiscriminatorDatasetFromFile(Dataset):
 
 
 class TextDataset(Dataset):
-    def __init__(self, tokenizer, file_path='train', block_size=512):
-        assert os.path.isfile(file_path), "could not load the filepath: {}".format(file_path)
+    def __init__(self, tokenizer, file_path='train', block_size=512, label=1):
+        self.label = label
+        assert os.path.isfile(file_path)
         directory, filename = os.path.split(file_path)
-        cached_features_file = os.path.join(directory, f'cached_lm_{block_size}_{filename}')
+        cached_features_file = os.path.join(directory, 'cached_lm_' + str(block_size) + '_' + filename)
 
         if os.path.exists(cached_features_file):
             logger.info("Loading features from cached file %s", cached_features_file)
             with open(cached_features_file, 'rb') as handle:
                 self.examples = pickle.load(handle)
         else:
-            logger.info("Creating features from dataset file at %s/%s", directory, file_path)
+            logger.info("Creating features from dataset file at %s", directory)
 
             self.examples = []
             with open(file_path, encoding="utf-8") as f:
-                text = f.read()
-            tokenized_text = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+                line = f.readline()
+                while line:
+                    print(line, line.strip())
+                    tokenized_text = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(line))
+                    self.examples.append(tokenizer.build_inputs_with_special_tokens(tokenized_text)) # often there are no special tokens
+                    line = f.readline()
 
-            while len(tokenized_text) >= block_size:  # Truncate in block of block_size
-                self.examples.append(tokenizer.add_special_tokens_single_sentence(tokenized_text[:block_size]))
-                tokenized_text = tokenized_text[block_size:]
-            # Note that we are losing the last truncated example here for the sake of simplicity (no padding)
-            # If your dataset is small, first you should look for a bigger one :-) and second you
+            # Note that we are loosing the last truncated example here for the sake of simplicity (no padding)
+            # If your dataset is small, first you should loook for a bigger one :-) and second you
             # can change this behavior by adding (model specific) padding.
 
             logger.info("Saving features into cached file %s", cached_features_file)
@@ -65,11 +67,11 @@ class TextDataset(Dataset):
         return len(self.examples)
 
     def __getitem__(self, item):
-        return torch.tensor(self.examples[item])
+        return torch.tensor(self.examples[item]), torch.tensor(self.label)
 
 
-def load_and_cache_examples_generator(args, tokenizer, evaluate=False):
-    dataset = TextDataset(tokenizer, file_path=args.eval_data_file if evaluate else args.train_data_file, block_size=32)
+def load_and_cache_examples_generator(args, tokenizer, evaluate=False, label=1):
+    dataset = TextDataset(tokenizer, file_path=args.eval_data_file if evaluate else args.train_data_file, block_size=args.block_size, label=label)
     return dataset
 
 def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False, no_cache=False):
@@ -96,19 +98,19 @@ def load_and_cache_examples(args, task, tokenizer, given_data, evaluate=False, n
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
         label_list = processor.get_labels()
-        if task in ['mnli', 'mnli-mm'] and args.dis_model_type in ['roberta']:
+        if task in ['mnli', 'mnli-mm'] and args.gen_model_type in ['roberta']:
             # HACK(label indices are swapped in RoBERTa pretrained model)
             label_list[1], label_list[2] = label_list[2], label_list[1] 
         examples = processor.get_dev_examples(given_data) if evaluate else processor.get_train_examples(given_data)
         features = convert_examples_to_features(examples, label_list, args.max_seq_length, tokenizer, output_mode,
-            cls_token_at_end=bool(args.dis_model_type in ['xlnet']),            # xlnet has a cls token at the end
+            cls_token_at_end=bool(args.gen_model_type in ['xlnet']),            # xlnet has a cls token at the end
             cls_token=tokenizer.cls_token,
-            cls_token_segment_id=2 if args.dis_model_type in ['xlnet'] else 0,
-            sep_token=tokenizer.sep_token,
-            sep_token_extra=bool(args.dis_model_type in ['roberta']),           # roberta uses an extra separator b/w pairs of sentences, cf. github.com/pytorch/fairseq/commit/1684e166e3da03f5b600dbb7855cb98ddfcd0805
-            pad_on_left=bool(args.dis_model_type in ['xlnet']),                 # pad on the left for xlnet
+            cls_token_segment_id=2 if args.gen_model_type in ['xlnet'] else 0,
+            sep_token=tokenizer.cls_token,
+            sep_token_extra=bool(args.gen_model_type in ['roberta']),           # roberta uses an extra separator b/w pairs of sentences, cf. github.com/pytorch/fairseq/commit/1684e166e3da03f5b600dbb7855cb98ddfcd0805
+            pad_on_left=bool(args.gen_model_type in ['xlnet']),                 # pad on the left for xlnet
             pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-            pad_token_segment_id=4 if args.dis_model_type in ['xlnet'] else 0,
+            pad_token_segment_id=4 if args.gen_model_type in ['xlnet'] else 0,
         )
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
