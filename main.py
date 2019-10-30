@@ -180,5 +180,5 @@ if __name__ == '__main__':
                 save_states(args, gen, dis, gen_optimizer, dis_optimizer, epochs=epoch + prev_epochs, name="time")
 
         if args.record_run and epoch % 2 == 0:
-            sample_and_record_text(args, gen, decoder, tokenizer)
+            sample_and_record_text(args, gen, decoder, gen_tokenizer)
         
