@@ -158,7 +158,7 @@ if __name__ == '__main__':
         logger.info('### GAN EPOCH: {} ###'.format(epoch))
 
         # TRAIN DISCRIMINATOR
-        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, tokenizer, dis_optimizer, train_dataloader, 1)
+        loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, gen_tokenizer, dis_optimizer, train_dataloader, 1)
         print("#### Average disriminator loss : {} ####".format(loss))
         if args.record_run:
             # don't save the disciminator until the generator is saved
@@ -166,7 +166,7 @@ if __name__ == '__main__':
         
         # TRAIN GENERATOR
         for gen_steps in range(args.gen_epochs_per_dis):
-            loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, tokenizer, gen_optimizer, 
+            loss, gen_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, gen_tokenizer, gen_optimizer, 
                                                                 train_dataloader, 1, is_discriminator=False)
             print("#### Average generator loss : {} ####".format(loss))
             if args.record_run:

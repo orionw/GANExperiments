@@ -47,8 +47,10 @@ def sample_and_record_text(args, gen, decoder, tokenizer):
     decoder.to("cpu:0")  # can't handle that much memory usage
     shaped_logits = decoded_logits.permute(2, 1, 0)  # swap axis for tokenizer to get (logits, batch_size, seq_len)
     text = vectorized_convert_to_text(shaped_logits, tokenizer)
+    text_sampled = gen.sample_text(args.train_batch_size)
     if args.record_run:
-        wandb.log({"examples": wandb.Table(data=text, columns=["Generated Sequences"])})
+        wandb.log({"examples_gan": wandb.Table(data=text, columns=["Generated Sequences"])})
+        wandb.log({"examples_sampled": wandb.Table(data=text_sampled, columns=["Sampled Sequences"])})
 
 
 def set_seed(args):

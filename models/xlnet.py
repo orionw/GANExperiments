@@ -233,8 +233,8 @@ class XLNetModelWithoutEmbedding(XLNetModel):
         attentions = []
         hidden_states = []
         for i, layer_module in enumerate(self.layer):
-            # cache new mems
-            new_mems = new_mems + (self.cache_mem(output_h, mems[i]),)
+            if self.mem_len is not None and self.mem_len > 0 and self.output_past:
+                new_mems = new_mems + (self.cache_mem(output_h, mems[i]),)
             if self.output_hidden_states:
                 hidden_states.append((output_h, output_g) if output_g is not None else output_h)
 
@@ -251,7 +251,11 @@ class XLNetModelWithoutEmbedding(XLNetModel):
         output = self.dropout(output_g if output_g is not None else output_h)
 
         # Prepare outputs, we transpose back here to shape [bsz, len, hidden_dim] (cf. beginning of forward() method)
-        outputs = (output.permute(1, 0, 2).contiguous(), new_mems)
+        outputs = (output.permute(1, 0, 2).contiguous(),)
+
+        if self.mem_len is not None and self.mem_len > 0 and self.output_past:
+            outputs = outputs + (new_mems,)
+
         if self.output_hidden_states:
             if output_g is not None:
                 hidden_states = tuple(h.permute(1, 0, 2).contiguous() for hs in hidden_states for h in hs)
@@ -262,5 +266,5 @@ class XLNetModelWithoutEmbedding(XLNetModel):
             attentions = tuple(t.permute(2, 3, 0, 1).contiguous() for t in attentions)
             outputs = outputs + (attentions,)
 
-        return outputs  # outputs, new_mems, (hidden_states), (attentions)
+        return outputs  # outputs, (new_mems), (hidden_states), (attentions)
 

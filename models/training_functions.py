@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 def discriminator_eval(args, batch, model, tokenizer, prefix=""):
     inputs =  { 'given_embedding': batch}
     outputs = model(**inputs)
-    logits, _ = outputs[:2]
+    logits = outputs[0]
     return logits
 
 
@@ -400,7 +400,7 @@ def adversarial_train(args, gen, dis, encoder, tokenizer, optimizer, training_da
             optimize(optimizer, loss, dis if is_discriminator else gen)
             total_loss += loss.item()
 
-    average_loss = total_loss / num_steps if num_steps != 0 else 0
+    average_loss = total_loss / (num_steps * args.train_batch_size) if num_steps != 0 else 0
     return average_loss, optimizer, gen, dis
 
 

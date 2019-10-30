@@ -16,12 +16,9 @@ python3 main.py \
     --gradient_accumulation_steps=4 \
     --output_dir=./gan_results \
     --pretrained_decoder_path \
-    --autoencoder_epochs 500 \
-    --autoencoder_learning_rate 0.0005 \
     --gen_epochs_per_dis=1 \
     --gan_only \
-    --loss_type=rsgan 
-
-    # --record_run
+    --loss_type=rsgan \
+    --record_run
     # --mle_pretraining 
     # --fp16       

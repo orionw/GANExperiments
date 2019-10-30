@@ -27,7 +27,6 @@ class Autoencoder(nn.Module):
         param: teacher_forcing_ratio: a float containing the percentage of the time to use teacher forcing
         returns: a tensor containing the autoencoder value of shape (seq_len, batch_size, logits)
         """
-        import pdb; pdb.set_trace()
         # prepare input
         batch = tuple(t.to(self.device) for t in batch)
         trg = trg.to(self.device)
