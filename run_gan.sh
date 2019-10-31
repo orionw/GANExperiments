@@ -9,8 +9,7 @@ python3 main.py \
     --data_dir=./data/puns \
     --max_seq_length=32 \
     --per_gpu_train_batch_size=1 \
-    --learning_rate=5e-3 \
-    --num_train_epochs=500 \
+    --num_train_epochs=5000 \
     --do_lower_case \
     --overwrite_output_dir \
     --gradient_accumulation_steps=4 \
@@ -19,6 +18,8 @@ python3 main.py \
     --gen_epochs_per_dis=1 \
     --gan_only \
     --loss_type=rsgan \
+    --gen_learning_rate=5e-5 \
+    --dis_learning_rate=1e-5 \
     --record_run
     # --mle_pretraining 
     # --fp16       

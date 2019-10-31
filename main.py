@@ -102,7 +102,7 @@ if __name__ == '__main__':
     val_dataloader = DataLoader(val_dataset, sampler=val_sampler, batch_size=args.per_gpu_train_batch_size, drop_last=True)
 
     # prepare optimizers and schedulers
-    gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(train_dataset))
+    gen, gen_optimizer = prepare_opt_and_scheduler(args, gen, len(train_dataset), is_gen=True)
     dis, dis_optimizer = prepare_opt_and_scheduler(args, dis, len(train_dataset))
 
       # Load models if they are pretrained
@@ -156,6 +156,7 @@ if __name__ == '__main__':
     for epoch in range(args.num_train_epochs):
         saved = False
         logger.info('### GAN EPOCH: {} ###'.format(epoch))
+        print("Starting off, sampled text is ", gen.sample_text(2))
 
         # TRAIN DISCRIMINATOR
         loss, dis_optimizer, gen, dis = adversarial_train(args, gen, dis, encoder, gen_tokenizer, dis_optimizer, train_dataloader, 1)

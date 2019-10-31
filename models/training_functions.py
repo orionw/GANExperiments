@@ -226,7 +226,7 @@ def evaluate_generator_mle(args, model, tokenizer, eval_dataset, prefix=""):
 
     return results
 
-def prepare_opt_and_scheduler(args, model, data_len):
+def prepare_opt_and_scheduler(args, model, data_len, is_gen=False):
     if args.max_steps > 0:
         t_total = args.max_steps
     else:
@@ -237,7 +237,7 @@ def prepare_opt_and_scheduler(args, model, data_len):
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-    optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+    optimizer = AdamW(optimizer_grouped_parameters, lr=args.gen_learning_rate if is_gen else args.dis_learning_rate, eps=args.adam_epsilon)
     # scheduler = WarmupLinearSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
     if args.fp16:
         try:
@@ -406,7 +406,7 @@ def adversarial_train(args, gen, dis, encoder, tokenizer, optimizer, training_da
 
 def optimize(opt, loss, model=None, retain_graph=False):
     opt.zero_grad()
-    loss.backward(retain_graph=retain_graph)
+    loss.backward()
     if model is not None: 
         torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0) # 5 is from RelGan paper/impl.
     opt.step()

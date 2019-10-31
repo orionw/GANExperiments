@@ -177,7 +177,7 @@ class XLNetForSequenceClassificationGivenEmbedding(XLNetPreTrainedModel):
 
         self.transformer = XLNetModelWithoutEmbedding(config)
         self.sequence_summary = SequenceSummary(config)
-        self.logits_proj = nn.Linear(config.d_model, config.num_labels)
+        self.logits_proj = nn.Linear(config.d_model, 1)
         self.init_weights()
 
     def forward(self, given_embedding, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
