@@ -32,7 +32,7 @@ class TestEmbeddings(unittest.TestCase):
         # discriminate
         discriminator = XLNetForSequenceClassificationGivenEmbedding.from_pretrained("xlnet-base-cased")
         output = discriminator(hidden)
-        assert output[0].shape == (1, 2), "did not disriminate one example: expected (1, 2) got {}".format(output[0].shape)
+        assert output[0].shape == (1, 1), "did not disriminate one example: expected (1, 1) got {}".format(output[0].shape)
 
     def test_full_model_discriminate_works(self):
         # create inital embedding, one step
@@ -43,7 +43,7 @@ class TestEmbeddings(unittest.TestCase):
         # discriminate
         discriminator = XLNetForSequenceClassificationGivenEmbedding.from_pretrained("xlnet-base-cased")
         output = discriminator(embedding)
-        assert output[0].shape == (1, 2), "did not disriminate one example: expected (1, 2) got {}".format(output[0].shape)
+        assert output[0].shape == (1, 1), "did not disriminate one example: expected (1, 1) got {}".format(output[0].shape)
 
 
 def create_args():
